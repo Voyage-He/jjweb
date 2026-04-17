@@ -1,0 +1,40 @@
+{
+  "name": "jujutsu-gui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A web-based GUI for Jujutsu (jj) version control system",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
+    "dev:web": "npm run dev -w packages/web",
+    "dev:server": "npm run dev -w packages/server",
+    "build": "npm run build -ws",
+    "build:web": "npm run build -w packages/web",
+    "build:server": "npm run build -w packages/server",
+    "lint": "eslint packages --ext .ts,.tsx",
+    "lint:fix": "eslint packages --ext .ts,.tsx --fix",
+    "format": "prettier --write \"packages/**/*.{ts,tsx,json,css}\"",
+    "format:check": "prettier --check \"packages/**/*.{ts,tsx,json,css}\"",
+    "test": "npm run test --workspaces --if-present",
+    "test:watch": "npm run test:watch --workspaces --if-present",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf packages/*/dist packages/*/node_modules node_modules"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.41.0",
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "concurrently": "^8.2.2",
+    "eslint": "^8.56.0",
+    "prettier": "^3.2.4",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
