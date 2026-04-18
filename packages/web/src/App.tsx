@@ -10,6 +10,7 @@ import { WorkingCopyPanel } from './components/working-copy';
 import { useWebSocket } from './hooks/useWebSocket';
 import { apiClient } from './api/client';
 import type { ServerMessage, Commit } from '@jujutsu-gui/shared';
+import { ToastProvider, useToast } from './components/ui/Toast';
 
 // Operation dialogs
 import { NewChangeDialog } from './components/operations/NewChangeDialog';
@@ -33,6 +34,7 @@ interface DialogState {
 
 function AppContent() {
   const [repoOpen, setRepoOpen] = useState(false);
+  const { toast } = useToast();
 
   // Dialog state
   const [dialogs, setDialogs] = useState<DialogState>({
@@ -151,6 +153,23 @@ function AppContent() {
   const handleSplit = () => openDialog('split');
   const handleCreateBookmark = () => openDialog('createBookmark');
 
+  // Handle editing a revision (switching working copy)
+  const handleEditRevision = async (commit: Commit) => {
+    // Don't do anything if clicking on the current working copy
+    if (commit.isWorkingCopy) return;
+
+    try {
+      await apiClient.editRevision(commit.changeId);
+      // Refresh both the log and working copy status
+      refetchLog();
+      refetchWorkingCopy();
+      toast(`Switched to ${commit.changeId.slice(0, 8)}`, 'success');
+    } catch (error) {
+      console.error('Failed to edit revision:', error);
+      toast('Failed to switch working copy', 'error');
+    }
+  };
+
   // Show repo selection if no repository is open
   if (!repository || !repoOpen) {
     return <RepoSelectView onRepoOpen={() => setRepoOpen(true)} />;
@@ -175,6 +194,7 @@ function AppContent() {
             commits={commits}
             selectedCommit={selectedCommit}
             onCommitSelect={handleCommitSelect}
+            onCommitEdit={handleEditRevision}
             onNewChange={handleNewChange}
             onEditDescription={handleEditDescription}
             onAbandon={handleAbandon}
@@ -268,7 +288,9 @@ function AppContent() {
 function App() {
   return (
     <ThemeProvider>
-      <AppContent />
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
     </ThemeProvider>
   );
 }

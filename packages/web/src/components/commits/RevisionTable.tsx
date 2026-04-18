@@ -8,6 +8,7 @@ interface RevisionTableProps {
   commits: Commit[];
   selectedCommit: Commit | null;
   onCommitSelect: (commit: Commit) => void;
+  onCommitEdit?: (commit: Commit) => void;
   onNewChange?: () => void;
   onEditDescription?: () => void;
   onAbandon?: () => void;
@@ -67,6 +68,18 @@ const CommitLines: React.FC<{
           />
         );
       });
+      
+      // Draw a dot at the revision's own position
+      p.push(
+        <circle
+          key={`${child.id}-dot`}
+          cx={childX}
+          cy={childY}
+          r={4}
+          fill="currentColor"
+          className="text-gray-400 dark:text-gray-500"
+        />
+      );
     });
     return p;
   }, [commits, commitMap, rowHeight, columnWidth]);
@@ -87,6 +100,7 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
   commits,
   selectedCommit,
   onCommitSelect,
+  onCommitEdit,
   onNewChange,
   onEditDescription,
   onAbandon,
@@ -185,6 +199,7 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
                   commit={commit}
                   isSelected={selectedCommit?.id === commit.id}
                   onSelect={onCommitSelect}
+                  onEdit={onCommitEdit}
                   showGridLines={showGridLines}
                 />
               </CommitContextMenu>

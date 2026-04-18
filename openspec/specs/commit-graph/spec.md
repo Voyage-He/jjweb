@@ -86,3 +86,38 @@
 #### Scenario: 展开折叠的变更
 - **WHEN** 用户双击折叠节点
 - **THEN** 系统展开显示所有被折叠的变更
+
+### Requirement: 提交图连线上的修订版本标记
+
+系统 SHALL 在提交图的连接线上，对应每个修订版本（revision）所在的网格单元格（cell）位置渲染一个圆点标记。
+
+#### Scenario: 连线标记的视觉渲染
+- **WHEN** 系统渲染提交图的连接线
+- **THEN** 系统在连线经过每个修订版本所在坐标时，绘制一个圆点
+- **AND** 圆点的颜色 SHALL 与连接线的颜色保持一致
+- **AND** 圆点 SHALL 准确对齐到网格中心，视觉上覆盖连线在修订版本位置的交点或起点
+
+### Requirement: 用户可以通过双击切换工作副本
+
+系统 SHALL 允许用户通过双击提交图中的 revision 节点来切换工作副本到该 revision。
+
+#### Scenario: 双击非工作副本 revision
+- **WHEN** 用户双击提交图中一个非当前工作副本的 revision 节点
+- **THEN** 系统执行 `jj edit <revision>` 命令
+- **AND** 工作副本移动到目标 revision
+- **AND** 提交图更新显示新的工作副本位置（绿色高亮）
+- **AND** 工作副本面板更新显示新 revision 的文件状态
+
+#### Scenario: 双击当前工作副本
+- **WHEN** 用户双击当前工作副本节点
+- **THEN** 系统不执行任何操作
+- **AND** 不显示任何提示信息
+
+#### Scenario: 切换工作副本失败
+- **WHEN** 用户双击某个 revision 但 `jj edit` 命令执行失败
+- **THEN** 系统显示错误提示信息
+- **AND** 提交图和工作副本状态保持不变
+
+#### Scenario: 表格视图双击切换
+- **WHEN** 用户在表格视图（RevisionTable）中双击某个 revision 单元格
+- **THEN** 系统执行与提交图视图相同的切换工作副本逻辑

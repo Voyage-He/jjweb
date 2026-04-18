@@ -184,6 +184,12 @@ class ApiClient {
     });
   }
 
+  async editRevision(id: string) {
+    return this.request<{ success: boolean }>(`/changes/${id}/edit`, {
+      method: 'POST',
+    });
+  }
+
   async moveChange(id: string, body: { destination: string; insertAfter?: boolean }) {
     return this.request<{ success: boolean }>(`/changes/${id}/move`, {
       method: 'POST',

@@ -12,6 +12,7 @@ interface CommitGraphProps {
   commits: Commit[];
   selectedCommit: Commit | null;
   onCommitSelect: (commit: Commit) => void;
+  onCommitEdit?: (commit: Commit) => void;
   onRebase?: (sourceId: string, targetId: string, insertAfter?: boolean) => void;
   width?: number;
   height?: number;
@@ -42,7 +43,7 @@ interface GraphMetrics {
 }
 
 const DEFAULT_METRICS: GraphMetrics = {
-  nodeRadius: 8,
+  nodeRadius: 4,
   nodeSpacingX: 60,
   nodeSpacingY: 40,
   paddingX: 40,
@@ -58,6 +59,7 @@ export function CommitGraph({
   commits,
   selectedCommit,
   onCommitSelect,
+  onCommitEdit,
   onRebase,
   width: propWidth,
   height: propHeight,
@@ -304,14 +306,34 @@ export function CommitGraph({
           }
 
           ctx.beginPath();
-          ctx.moveTo(x, y + nodeRadius);
+          ctx.moveTo(x, y);
+
+          // Draw helper dots for each row the edge passes through
+          const minY = Math.min(y, parentY);
+          const maxY = Math.max(y, parentY);
+          for (let intermediateY = minY + nodeSpacingY; intermediateY < maxY; intermediateY += nodeSpacingY) {
+            // Simple linear interpolation for x position of the dot
+            // For a bezier curve, this is an approximation, but for vertical segments it's exact
+            const t = (intermediateY - y) / (parentY - y);
+            // We'll use a simple approximation for the x position on the curve
+            // For vertical lines (x === parentX), this is exact
+            const interX = x + (parentX - x) * t; 
+            
+            ctx.save();
+            ctx.fillStyle = node.branchColor;
+            ctx.globalAlpha = 0.5; // Make intermediate dots slightly fainter
+            ctx.beginPath();
+            ctx.arc(interX, intermediateY, 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
 
           // Draw curved line
           const midY = (y + parentY) / 2;
           ctx.bezierCurveTo(
             x, midY,
             parentX, midY,
-            parentX, parentY - nodeRadius
+            parentX, parentY
           );
           ctx.stroke();
           ctx.setLineDash([]);
@@ -550,6 +572,34 @@ export function CommitGraph({
     }
   }, [graphNodes, scrollOffset, hoveredNode, onCommitSelect, toggleCollapse]);
 
+  // Handle double click for editing (switching working copy)
+  const handleDoubleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!onCommitEdit) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left + scrollOffset.x;
+    const clickY = e.clientY - rect.top + scrollOffset.y;
+
+    const { nodeSpacingX, nodeSpacingY, paddingX, paddingY, nodeRadius } = DEFAULT_METRICS;
+
+    // Find the node being double-clicked
+    for (const node of graphNodes) {
+      if (!node.visible) continue;
+
+      const nodeX = node.x * nodeSpacingX + paddingX;
+      const nodeY = node.y * nodeSpacingY + paddingY;
+
+      const distance = Math.sqrt((clickX - nodeX) ** 2 + (clickY - nodeY) ** 2);
+      if (distance <= nodeRadius + 4) {
+        onCommitEdit(node.commit);
+        return;
+      }
+    }
+  }, [graphNodes, scrollOffset, onCommitEdit]);
+
   // Handle drag start
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!hoveredNode || !onRebase) return;
@@ -760,6 +810,7 @@ export function CommitGraph({
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
         onMouseLeave={() => {
           setHoveredNode(null);
           handleMouseUp();

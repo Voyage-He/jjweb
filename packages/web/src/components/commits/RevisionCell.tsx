@@ -11,6 +11,7 @@ interface RevisionCellProps {
   commit: Commit;
   isSelected: boolean;
   onSelect: (commit: Commit) => void;
+  onEdit?: (commit: Commit) => void;
   showGridLines: boolean;
 }
 
@@ -18,12 +19,14 @@ export const RevisionCell: React.FC<RevisionCellProps> = ({
   commit,
   isSelected,
   onSelect,
+  onEdit,
   showGridLines,
 }) => {
   return (
     <div
       className="relative bg-transparent transition-colors flex flex-col justify-center min-w-0 h-full w-full"
       onClick={() => onSelect(commit)}
+      onDoubleClick={() => onEdit?.(commit)}
     >
       <div 
         className={cn(

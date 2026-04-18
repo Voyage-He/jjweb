@@ -596,6 +596,30 @@ router.delete('/changes/:id', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/changes/:id/edit - Switch working copy to revision
+ */
+router.post('/changes/:id/edit', async (req: Request, res: Response) => {
+  try {
+    const repoPath = getRepoPath();
+    if (!repoPath) {
+      res.status(404).json({ error: 'no_repo', message: 'No repository open' });
+      return;
+    }
+
+    const { id } = req.params;
+    const result = await jjExecutor.execute(['edit', id], { cwd: repoPath });
+
+    if (!result.success) {
+      throw new Error(result.stderr);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+/**
  * POST /api/changes/:id/move - Move/rebase change
  */
 router.post('/changes/:id/move', async (req: Request, res: Response) => {
