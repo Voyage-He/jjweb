@@ -72,7 +72,7 @@ export function CommitContextMenu({
 
   return (
     <>
-      <div onContextMenu={handleContextMenu}>
+      <div onContextMenu={handleContextMenu} className="w-full h-full">
         {children}
       </div>
 

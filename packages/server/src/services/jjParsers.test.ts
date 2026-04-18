@@ -5,14 +5,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock jjExecutor
-vi.mock('../src/services/jjExecutor', () => ({
+vi.mock('./jjExecutor', () => ({
   jjExecutor: {
     execute: vi.fn(),
   },
 }));
 
-import { jjExecutor } from '../src/services/jjExecutor';
-import { parseLog, parseStatus, parseDiff, parseBookmarks } from '../src/services/jjParsers';
+import { jjExecutor } from './jjExecutor';
+import { parseLog, parseStatus, parseDiff, parseBookmarks } from './jjParsers';
 
 describe('JJ Parsers', () => {
   beforeEach(() => {
@@ -71,6 +71,108 @@ describe('JJ Parsers', () => {
       });
 
       await expect(parseLog('/test/repo')).rejects.toThrow();
+    });
+
+    it('should calculate correct grid coordinates for linear history', async () => {
+      const commitA = {
+        change_id: 'a', commit_id: 'A', parents: ['B'],
+        author: { name: 'X', email: 'x', timestamp: '2024-01-01 10:00:00 +00:00' },
+        committer: { name: 'X', email: 'x', timestamp: '2024-01-01 10:00:00 +00:00' },
+        description: 'A'
+      };
+      const commitB = {
+        change_id: 'b', commit_id: 'B', parents: ['C'],
+        author: { name: 'X', email: 'x', timestamp: '2024-01-01 09:00:00 +00:00' },
+        committer: { name: 'X', email: 'x', timestamp: '2024-01-01 09:00:00 +00:00' },
+        description: 'B'
+      };
+      const commitC = {
+        change_id: 'c', commit_id: 'C', parents: [],
+        author: { name: 'X', email: 'x', timestamp: '2024-01-01 08:00:00 +00:00' },
+        committer: { name: 'X', email: 'x', timestamp: '2024-01-01 08:00:00 +00:00' },
+        description: 'C'
+      };
+
+      vi.mocked(jjExecutor.execute).mockResolvedValue({
+        stdout: JSON.stringify(commitA) + '\n' + JSON.stringify(commitB) + '\n' + JSON.stringify(commitC) + '\n',
+        stderr: '', exitCode: 0, success: true,
+      });
+
+      const commits = await parseLog('/test/repo');
+      expect(commits).toHaveLength(3);
+      expect(commits[0].row).toBe(0); expect(commits[0].column).toBe(0);
+      expect(commits[1].row).toBe(1); expect(commits[1].column).toBe(0);
+      expect(commits[2].row).toBe(2); expect(commits[2].column).toBe(0);
+    });
+
+    it('should calculate correct grid coordinates for a fork', async () => {
+      // Fork: A and B both have parent C
+      const commitA = {
+        change_id: 'a', commit_id: 'A', parents: ['C'],
+        author: { name: 'X', email: 'x', timestamp: '2024-01-01 10:00:00 +00:00' },
+        committer: { name: 'X', email: 'x', timestamp: '2024-01-01 10:00:00 +00:00' },
+        description: 'A'
+      };
+      const commitB = {
+        change_id: 'b', commit_id: 'B', parents: ['C'],
+        author: { name: 'X', email: 'x', timestamp: '2024-01-01 09:30:00 +00:00' },
+        committer: { name: 'X', email: 'x', timestamp: '2024-01-01 09:30:00 +00:00' },
+        description: 'B'
+      };
+      const commitC = {
+        change_id: 'c', commit_id: 'C', parents: [],
+        author: { name: 'X', email: 'x', timestamp: '2024-01-01 08:00:00 +00:00' },
+        committer: { name: 'X', email: 'x', timestamp: '2024-01-01 08:00:00 +00:00' },
+        description: 'C'
+      };
+
+      vi.mocked(jjExecutor.execute).mockResolvedValue({
+        stdout: JSON.stringify(commitA) + '\n' + JSON.stringify(commitB) + '\n' + JSON.stringify(commitC) + '\n',
+        stderr: '', exitCode: 0, success: true,
+      });
+
+      const commits = await parseLog('/test/repo');
+      expect(commits[0].id).toBe('A');
+      expect(commits[0].column).toBe(0);
+      expect(commits[1].id).toBe('B');
+      expect(commits[1].column).toBe(1);
+      expect(commits[2].id).toBe('C');
+      expect(commits[2].column).toBe(0); // Should claim lane 0
+    });
+
+    it('should calculate correct grid coordinates for a merge', async () => {
+      // Merge: A has parents B and C
+      const commitA = {
+        change_id: 'a', commit_id: 'A', parents: ['B', 'C'],
+        author: { name: 'X', email: 'x', timestamp: '2024-01-01 10:00:00 +00:00' },
+        committer: { name: 'X', email: 'x', timestamp: '2024-01-01 10:00:00 +00:00' },
+        description: 'A'
+      };
+      const commitB = {
+        change_id: 'b', commit_id: 'B', parents: ['D'],
+        author: { name: 'X', email: 'x', timestamp: '2024-01-01 09:30:00 +00:00' },
+        committer: { name: 'X', email: 'x', timestamp: '2024-01-01 09:30:00 +00:00' },
+        description: 'B'
+      };
+      const commitC = {
+        change_id: 'c', commit_id: 'C', parents: ['D'],
+        author: { name: 'X', email: 'x', timestamp: '2024-01-01 09:00:00 +00:00' },
+        committer: { name: 'X', email: 'x', timestamp: '2024-01-01 09:00:00 +00:00' },
+        description: 'C'
+      };
+
+      vi.mocked(jjExecutor.execute).mockResolvedValue({
+        stdout: JSON.stringify(commitA) + '\n' + JSON.stringify(commitB) + '\n' + JSON.stringify(commitC) + '\n',
+        stderr: '', exitCode: 0, success: true,
+      });
+
+      const commits = await parseLog('/test/repo');
+      expect(commits[0].id).toBe('A');
+      expect(commits[0].column).toBe(1);
+      expect(commits[1].id).toBe('B');
+      expect(commits[1].column).toBe(1);
+      expect(commits[2].id).toBe('C');
+      expect(commits[2].column).toBe(0);
     });
   });
 

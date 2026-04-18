@@ -53,6 +53,11 @@ interface UIState {
   activeTab: 'commits' | 'files' | 'operations';
   theme: 'light' | 'dark' | 'system';
   commandPaletteOpen: boolean;
+  showGridLines: boolean;
+  gridLayoutOptions: {
+    rowHeight: number;
+    columnWidth: number;
+  };
 }
 
 interface UIActions {
@@ -61,6 +66,8 @@ interface UIActions {
   setActiveTab: (tab: UIState['activeTab']) => void;
   setTheme: (theme: UIState['theme']) => void;
   toggleCommandPalette: () => void;
+  toggleGridLines: () => void;
+  setGridLayoutOptions: (options: Partial<UIState['gridLayoutOptions']>) => void;
 }
 
 export const useUIStore = create<UIState & UIActions>()(
@@ -71,15 +78,29 @@ export const useUIStore = create<UIState & UIActions>()(
       activeTab: 'commits',
       theme: 'system',
       commandPaletteOpen: false,
+      showGridLines: true,
+      gridLayoutOptions: {
+        rowHeight: 64,
+        columnWidth: 200,
+      },
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       toggleDetailPanel: () => set((state) => ({ detailPanelOpen: !state.detailPanelOpen })),
       setActiveTab: (activeTab) => set({ activeTab }),
       setTheme: (theme) => set({ theme }),
       toggleCommandPalette: () => set((state) => ({ commandPaletteOpen: !state.commandPaletteOpen })),
+      toggleGridLines: () => set((state) => ({ showGridLines: !state.showGridLines })),
+      setGridLayoutOptions: (options) =>
+        set((state) => ({
+          gridLayoutOptions: { ...state.gridLayoutOptions, ...options },
+        })),
     }),
     {
       name: 'jjgui-ui-storage',
-      partialize: (state) => ({ theme: state.theme, sidebarOpen: state.sidebarOpen }),
+      partialize: (state) => ({
+        theme: state.theme,
+        sidebarOpen: state.sidebarOpen,
+        showGridLines: state.showGridLines,
+      }),
     }
   )
 );

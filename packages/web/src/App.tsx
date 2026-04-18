@@ -4,7 +4,7 @@ import { ThemeProvider } from './hooks/useTheme';
 import { useRepoStore } from './stores';
 import { Layout } from './components/layout';
 import { RepoSelectView } from './components/repo';
-import { CommitGraph } from './components/commits';
+import { RevisionTable } from './components/commits';
 import { CommitDetail } from './components/commits/CommitDetail';
 import { WorkingCopyPanel } from './components/working-copy';
 import { useWebSocket } from './hooks/useWebSocket';
@@ -171,12 +171,17 @@ function AppContent() {
           />
         }
         main={
-          <CommitGraph
+          <RevisionTable
             commits={commits}
             selectedCommit={selectedCommit}
             onCommitSelect={handleCommitSelect}
-            loading={logLoading}
-            error={logError instanceof Error ? logError.message : logError ? String(logError) : null}
+            onNewChange={handleNewChange}
+            onEditDescription={handleEditDescription}
+            onAbandon={handleAbandon}
+            onRebase={handleRebase}
+            onSquash={handleSquash}
+            onSplit={handleSplit}
+            onCreateBookmark={handleCreateBookmark}
           />
         }
         detail={

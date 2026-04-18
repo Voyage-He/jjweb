@@ -21,6 +21,8 @@ export function Layout({ sidebar, main, detail, onOpenRepo, onInitRepo, onCloneR
   const detailPanelOpen = useUIStore((state) => state.detailPanelOpen);
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
   const toggleDetailPanel = useUIStore((state) => state.toggleDetailPanel);
+  const showGridLines = useUIStore((state) => state.showGridLines);
+  const toggleGridLines = useUIStore((state) => state.toggleGridLines);
   const repository = useRepoStore((state) => state.repository);
 
   return (
@@ -51,6 +53,15 @@ export function Layout({ sidebar, main, detail, onOpenRepo, onInitRepo, onCloneR
           )}
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={toggleGridLines}
+            className={`p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 ${showGridLines ? 'text-blue-600' : 'text-gray-400'}`}
+            title="Toggle grid lines"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0V6a2 2 0 012-2h10a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+            </svg>
+          </button>
           <button
             onClick={toggleDetailPanel}
             className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700"

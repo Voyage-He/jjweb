@@ -16,6 +16,8 @@ export interface Commit {
   isDivergent?: boolean;
   hasConflicts?: boolean;
   isEmpty?: boolean;
+  row?: number;
+  column?: number;
 }
 
 export interface Author {

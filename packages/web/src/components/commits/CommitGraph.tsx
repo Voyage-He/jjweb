@@ -6,8 +6,7 @@
 
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import type { Commit, Bookmark } from '@jujutsu-gui/shared';
-import { layoutCommits, type LayoutNode } from './layout';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { layoutCommits, getScaledLayoutNodes, type LayoutNode } from './layout';
 
 interface CommitGraphProps {
   commits: Commit[];
@@ -28,6 +27,8 @@ interface GraphNode extends LayoutNode {
   highlighted: boolean;
   collapsed: boolean;
   hasCollapsedChildren: boolean;
+  branchColor: string;
+  isBranchStart: boolean;
 }
 
 interface GraphMetrics {
@@ -128,7 +129,7 @@ export function CommitGraph({
 
   // Calculate layout for commits with search/filter/collapse support
   const graphNodes = useMemo(() => {
-    const layout = layoutCommits(commits);
+    const layout = getScaledLayoutNodes(layoutCommits(commits));
 
     // Build a set of matching commits for search
     const searchLower = searchQuery.toLowerCase();
@@ -174,6 +175,8 @@ export function CommitGraph({
       const isCollapsed = collapsedNodes.has(node.id);
       const children = getChildren(node.id);
       const hasCollapsedChildren = children.length > 0;
+      const branchColor = node.branchColor || '#6b7280';
+      const isBranchStart = node.branchDepth > 0 && node.siblingIndex === 0;
 
       return {
         ...node,
@@ -182,6 +185,8 @@ export function CommitGraph({
         highlighted,
         collapsed: isCollapsed,
         hasCollapsedChildren,
+        branchColor,
+        isBranchStart,
       };
     });
   }, [commits, searchQuery, filterBookmarks, collapsedNodes, getDescendants, getChildren]);
@@ -276,10 +281,7 @@ export function CommitGraph({
     const commitMap = new Map<string, GraphNode>();
     graphNodes.forEach((node) => commitMap.set(node.id, node));
 
-    // Draw edges (connections between nodes)
-    ctx.strokeStyle = '#4b5563'; // gray-600
-    ctx.lineWidth = 2;
-
+    // Draw edges (connections between nodes) with branch colors
     visibleNodes.forEach((node) => {
       const x = node.x * nodeSpacingX + paddingX;
       const y = node.y * nodeSpacingY + paddingY;
@@ -289,6 +291,17 @@ export function CommitGraph({
         if (parentNode && parentNode.visible) {
           const parentX = parentNode.x * nodeSpacingX + paddingX;
           const parentY = parentNode.y * nodeSpacingY + paddingY;
+
+          // Use branch color for edge
+          ctx.strokeStyle = node.branchColor;
+          ctx.lineWidth = node.isMergePoint ? 3 : 2;
+
+          // Use dashed line for merge edges (when commit has multiple parents)
+          if (node.commit.parents.length > 1) {
+            ctx.setLineDash([5, 5]);
+          } else {
+            ctx.setLineDash([]);
+          }
 
           ctx.beginPath();
           ctx.moveTo(x, y + nodeRadius);
@@ -301,6 +314,7 @@ export function CommitGraph({
             parentX, parentY - nodeRadius
           );
           ctx.stroke();
+          ctx.setLineDash([]);
         }
       });
     });
@@ -318,6 +332,23 @@ export function CommitGraph({
         ctx.beginPath();
         ctx.arc(x, y, nodeRadius + 6, 0, Math.PI * 2);
         ctx.fill();
+      }
+
+      // Draw branch start indicator (small circle) if this is a branch start point
+      if (node.isBranchStart) {
+        ctx.fillStyle = node.branchColor;
+        ctx.beginPath();
+        ctx.arc(x - nodeRadius - 8, y, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Draw merge point highlight ring
+      if (node.isMergePoint) {
+        ctx.strokeStyle = node.branchColor;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(x, y, nodeRadius + 4, 0, Math.PI * 2);
+        ctx.stroke();
       }
 
       // Draw collapse indicator if node has children
@@ -339,10 +370,16 @@ export function CommitGraph({
         ctx.fillText(node.collapsed ? '+' : '−', collapseX, collapseY);
       }
 
-      // Draw node circle
+      // Draw node circle with branch color
       ctx.beginPath();
       ctx.arc(x, y, nodeRadius, 0, Math.PI * 2);
-      ctx.fillStyle = getCommitColor(node.commit, isSelected, isHovered);
+      // Use branch color for non-selected nodes
+      let nodeColor = node.branchColor;
+      if (isSelected) nodeColor = '#3b82f6'; // blue-500
+      else if (isHovered) nodeColor = '#60a5fa'; // blue-400
+      else if (node.commit.isWorkingCopy) nodeColor = '#22c55e'; // green-500
+      else if (node.commit.bookmarks.length > 0) nodeColor = '#8b5cf6'; // violet-500
+      ctx.fillStyle = nodeColor;
       ctx.fill();
 
       // Draw border for selected/hovered

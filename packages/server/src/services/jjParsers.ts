@@ -58,7 +58,8 @@ export async function parseLog(
     if (offset > 0) {
       commits = commits.slice(offset);
     }
-    return commits.map(parseCommitFromJson);
+    const parsedCommits = commits.map(parseCommitFromJson);
+    return calculateLayout(parsedCommits);
   } catch (e) {
     // Re-throw with more context - don't silently return empty array
     const errorMessage = e instanceof Error ? e.message : String(e);
@@ -66,6 +67,120 @@ export async function parseLog(
     console.error('Raw stdout (first 500 chars):', result.stdout.slice(0, 500));
     throw new Error(`Failed to parse jj log output: ${errorMessage}`);
   }
+}
+
+/**
+ * Calculate grid coordinates (row, column) for commits
+ */
+/**
+ * Calculate grid coordinates (row, column) for commits
+ */
+function calculateLayout(commits: Commit[]): Commit[] {
+  if (commits.length === 0) return [];
+
+  const commitToChange = new Map<string, string>();
+  const changeToIndex = new Map<string, number>();
+  for (let i = 0; i < commits.length; i++) {
+    commitToChange.set(commits[i].id, commits[i].changeId);
+    changeToIndex.set(commits[i].changeId, i);
+  }
+  const getStableId = (cid: string) => commitToChange.get(cid) || cid;
+
+  const scores = new Map<string, number>();
+  const primaryChildrenMap = new Map<string, string[]>();
+
+  for (const commit of commits) {
+    const myId = commit.changeId;
+    let score = 1;
+    if (commit.isWorkingCopy) score = 1000;
+    for (const b of commit.bookmarks) {
+      const name = b.name.toLowerCase();
+      if (['main', 'master', 'trunk', 'default', '@'].some(n => name.includes(n))) {
+        score = Math.max(score, 500);
+      } else {
+        score = Math.max(score, 100);
+      }
+    }
+    scores.set(myId, score);
+
+    if (commit.parents.length > 0) {
+      const primaryParentId = getStableId(commit.parents[0]);
+      if (!primaryChildrenMap.has(primaryParentId)) primaryChildrenMap.set(primaryParentId, []);
+      primaryChildrenMap.get(primaryParentId)!.push(myId);
+    }
+  }
+
+  // Propagate scores UP
+  for (let i = 0; i < commits.length; i++) {
+    const commit = commits[i];
+    const currentScore = scores.get(commit.changeId) || 0;
+    if (commit.parents.length > 0) {
+      const primaryParentId = getStableId(commit.parents[0]);
+      scores.set(primaryParentId, Math.max(scores.get(primaryParentId) || 0, currentScore));
+    }
+  }
+
+  const assignedColumns = new Map<string, number>();
+  const globallyOccupied = new Set<number>();
+
+  function getNextFreeCol(startCol: number): number {
+    let col = startCol;
+    while (globallyOccupied.has(col)) col++;
+    globallyOccupied.add(col);
+    return col;
+  }
+
+  console.log('--- Start Layout Calculation (Stable Oldest-First) ---');
+  
+  // Sort roots by score, then by index (oldest first)
+  const roots = commits.filter(c => {
+    const p0 = c.parents.length > 0 ? getStableId(c.parents[0]) : null;
+    return !p0 || !changeToIndex.has(p0);
+  }).sort((a, b) => {
+    const sDiff = (scores.get(b.changeId) || 0) - (scores.get(a.changeId) || 0);
+    if (sDiff !== 0) return sDiff;
+    return (changeToIndex.get(b.changeId) || 0) - (changeToIndex.get(a.changeId) || 0);
+  });
+
+  // Process from roots upwards to assign branches
+  for (let i = commits.length - 1; i >= 0; i--) {
+    const commit = commits[i];
+    const myId = commit.changeId;
+    
+    if (!assignedColumns.has(myId)) {
+      const col = getNextFreeCol(0);
+      assignedColumns.set(myId, col);
+    }
+    
+    const myCol = assignedColumns.get(myId)!;
+    const primaryChildren = primaryChildrenMap.get(myId) || [];
+    
+    if (primaryChildren.length > 0) {
+      // THE FIX: When scores are tied, favor the OLDEST child (higher index)
+      primaryChildren.sort((a, b) => {
+        const sDiff = (scores.get(b) || 0) - (scores.get(a) || 0);
+        if (sDiff !== 0) return sDiff;
+        return (changeToIndex.get(b) || 0) - (changeToIndex.get(a) || 0);
+      });
+
+      assignedColumns.set(primaryChildren[0], myCol);
+      console.log(`[Flow] ${primaryChildren[0].slice(0, 4)} inherits Col ${myCol} from parent ${myId.slice(0, 4)}`);
+
+      for (let k = 1; k < primaryChildren.length; k++) {
+        const cid = primaryChildren[k];
+        const newCol = getNextFreeCol(myCol + 1);
+        assignedColumns.set(cid, newCol);
+        console.log(`[Fork] ${cid.slice(0, 4)} moved right to Col ${newCol}`);
+      }
+    }
+  }
+  console.log('--- End Layout Calculation ---');
+
+  for (let i = 0; i < commits.length; i++) {
+    commits[i].row = i;
+    commits[i].column = assignedColumns.get(commits[i].changeId) ?? 0;
+  }
+  return commits;
 }
 
 // Interface for jj's built-in JSON output (from json(self) template)
