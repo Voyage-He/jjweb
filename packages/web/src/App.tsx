@@ -84,6 +84,12 @@ function AppContent() {
   useEffect(() => {
     if (logData?.commits) {
       setCommits(logData.commits);
+      console.log('[App] setCommits called with', logData.commits.length, 'commits');
+      const withBookmarks = logData.commits.filter((c: Commit) => c.bookmarks && c.bookmarks.length > 0);
+      console.log('[App] Commits with bookmarks:', withBookmarks.length);
+      withBookmarks.forEach((c: Commit) => {
+        console.log(`[App] Commit ${c.changeId?.slice(0, 8)}: bookmarks=`, c.bookmarks?.map(b => b.name));
+      });
     }
   }, [logData, setCommits]);
 
@@ -191,7 +197,7 @@ function AppContent() {
         }
         main={
           <RevisionTable
-            commits={commits}
+            commits={commits || []}
             selectedCommit={selectedCommit}
             onCommitSelect={handleCommitSelect}
             onCommitEdit={handleEditRevision}

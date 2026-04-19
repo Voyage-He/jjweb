@@ -19,7 +19,9 @@ export async function parseLog(
   // Use jj's built-in json() function to serialize commits
   // The json() function handles all escaping and formatting correctly
   // Each commit is output as a JSON object on its own line
-  const jsonTemplate = 'json(self) ++ "\n"';
+  // NOTE: json(self) does NOT include bookmarks, so we append them separately
+  // Format: <json>|||BOOKMARKS|||<bookmark1>:::<bookmark2>:::...
+  const jsonTemplate = 'json(self) ++ "|||BOOKMARKS|||" ++ bookmarks.map(|b| b.name()).join(":::") ++ "\n"';
 
   // Build args - jj doesn't have --skip, so we use a revset approach for pagination
   const args = [
@@ -37,7 +39,7 @@ export async function parseLog(
   }
 
   try {
-    // Parse each line as a JSON object
+    // Parse each line as a JSON object with appended bookmarks
     const lines = result.stdout.trim().split('\n').filter(line => line.trim());
 
     // If no output but command succeeded, return empty array (empty repo case)
@@ -45,9 +47,24 @@ export async function parseLog(
       return [];
     }
 
+    // Parse each line: <json>|||BOOKMARKS|||<bookmark1>:::<bookmark2>:::...
     let commits = lines.map((line, index) => {
       try {
-        return JSON.parse(line);
+        // Split by our custom separator
+        const separator = '|||BOOKMARKS|||';
+        const sepIndex = line.indexOf(separator);
+        const jsonPart = sepIndex >= 0 ? line.slice(0, sepIndex) : line;
+        const bookmarksPart = sepIndex >= 0 ? line.slice(sepIndex + separator.length) : '';
+
+        const json = JSON.parse(jsonPart);
+        // Extract bookmarks from the appended part
+        const localBookmarks = bookmarksPart ? bookmarksPart.split(':::').filter(b => b.trim()) : [];
+
+        // Add local_bookmarks to the JSON object for parseCommitFromJson
+        return {
+          ...json,
+          local_bookmarks: localBookmarks,
+        };
       } catch (parseError) {
         console.error(`Failed to parse line ${index + 1}:`, line.slice(0, 200));
         throw new Error(`JSON parse error at line ${index + 1}: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
