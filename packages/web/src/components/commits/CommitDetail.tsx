@@ -78,7 +78,6 @@ export function CommitDetail({
     );
   }
 
-  const shortId = commit.id.slice(0, 12);
   const shortChangeId = commit.changeId.slice(0, 12);
 
   return (
@@ -93,16 +92,6 @@ export function CommitDetail({
       onCreateBookmark={onCreateBookmark}
     >
       <div className="p-4 space-y-4">
-        {/* Commit ID */}
-        <div>
-          <label className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-            Commit ID
-          </label>
-          <p className="font-mono text-sm text-gray-900 dark:text-gray-100 mt-1">
-            {shortId}
-          </p>
-        </div>
-
         {/* Change ID */}
         <div>
           <label className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
@@ -151,15 +140,15 @@ export function CommitDetail({
           <label className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">
             Parents
           </label>
-          <div className="mt-1 space-y-1">
+          <div className="mt-1">
             {commit.parents.length === 0 ? (
               <p className="text-sm text-gray-500 dark:text-gray-400">Root commit</p>
+            ) : commit.parents.length === 1 ? (
+              <p className="text-sm text-gray-700 dark:text-gray-300">1 parent</p>
             ) : (
-              commit.parents.map((parentId) => (
-                <p key={parentId} className="font-mono text-xs text-gray-600 dark:text-gray-400">
-                  {parentId.slice(0, 12)}
-                </p>
-              ))
+              <p className="text-sm text-gray-700 dark:text-gray-300">
+                {commit.parents.length} parents (merge)
+              </p>
             )}
           </div>
         </div>
