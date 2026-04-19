@@ -118,7 +118,9 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
 }) => {
   const { showGridLines, gridLayoutOptions } = useUIStore();
   const containerRef = useRef<HTMLDivElement>(null);
+  const bookmarkHeaderRef = useRef<HTMLDivElement>(null);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 });
+  const [scrollLeft, setScrollLeft] = useState(0);
 
   // Compute column bookmark mapping (tasks 1.1-1.3)
   // Groups bookmarks by column, sorts by row, extracts first bookmark per column
@@ -181,21 +183,37 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
 
   // Update visible range on scroll
   useEffect(() => {
+    let rafId: number | null = null;
+
     const handleScroll = () => {
-      if (!containerRef.current) return;
-      const { scrollTop, clientHeight } = containerRef.current;
-      const startRow = Math.max(0, Math.floor(scrollTop / gridLayoutOptions.rowHeight) - VIRTUAL_BUFFER);
-      const endRow = Math.min(commits.length - 1, Math.ceil((scrollTop + clientHeight) / gridLayoutOptions.rowHeight) + VIRTUAL_BUFFER);
-      setVisibleRange({ start: startRow, end: endRow });
+      // Cancel any pending animation frame
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+
+      rafId = requestAnimationFrame(() => {
+        if (!containerRef.current) return;
+        const { scrollTop, scrollLeft, clientHeight } = containerRef.current;
+        const startRow = Math.max(0, Math.floor(scrollTop / gridLayoutOptions.rowHeight) - VIRTUAL_BUFFER);
+        const endRow = Math.min(commits.length - 1, Math.ceil((scrollTop + clientHeight) / gridLayoutOptions.rowHeight) + VIRTUAL_BUFFER);
+        setVisibleRange({ start: startRow, end: endRow });
+        setScrollLeft(scrollLeft);
+        rafId = null;
+      });
     };
 
     const container = containerRef.current;
     if (container) {
-      container.addEventListener('scroll', handleScroll);
+      container.addEventListener('scroll', handleScroll, { passive: true });
       // Initial calculation
       handleScroll();
     }
-    return () => container?.removeEventListener('scroll', handleScroll);
+    return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      container?.removeEventListener('scroll', handleScroll);
+    };
   }, [commits.length, gridLayoutOptions.rowHeight]);
 
   const metrics = useMemo(() => {
@@ -255,10 +273,12 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
     <div className="flex flex-col h-full w-full bg-white dark:bg-gray-950">
       {/* Column header row - fixed at top (tasks 3.1, 3.2) */}
       <div
+        ref={bookmarkHeaderRef}
         className="flex shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950 sticky top-0 z-20"
         style={{
           width: (metrics.maxCol + 1) * gridLayoutOptions.columnWidth,
           minWidth: '100%',
+          transform: `translateX(${-scrollLeft}px)`,
         }}
       >
         {columnHeaders.map((header, index) => (

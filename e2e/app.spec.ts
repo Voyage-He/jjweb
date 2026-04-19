@@ -140,16 +140,16 @@ test.describe('Commit Graph', () => {
     await page.goto('/');
   });
 
-  test('should display commit graph', async ({ page }) => {
-    // Wait for commit graph to render
-    const canvas = page.locator('canvas');
-    await expect(canvas).toBeVisible();
+  test('should display commit table', async ({ page }) => {
+    // Wait for revision table to render
+    const table = page.locator('[data-testid="revision-table"]');
+    await expect(table).toBeVisible();
   });
 
   test('should show commit details on selection', async ({ page }) => {
-    // Click on canvas (commit node)
-    const canvas = page.locator('canvas');
-    await canvas.click({ position: { x: 50, y: 50 } });
+    // Click on a row in the revision table
+    const table = page.locator('[data-testid="revision-table"]');
+    await table.click({ position: { x: 50, y: 50 } });
 
     // Detail panel should show commit info
     await expect(page.getByText('Initial commit')).toBeVisible();

@@ -6,7 +6,7 @@ A modern web-based graphical interface for the [Jujutsu (jj)](https://github.com
 
 ## Features
 
-- **Visual Commit Graph**: Interactive canvas-based visualization of your repository history
+- **Visual Commit Graph**: Interactive visualization of your repository history
 - **Change Management**: Create, edit, abandon, rebase, squash, and split changes
 - **Working Copy View**: See modified, added, deleted, and untracked files with diff previews
 - **Bookmark Management**: Create, move, and delete bookmarks with remote tracking support
