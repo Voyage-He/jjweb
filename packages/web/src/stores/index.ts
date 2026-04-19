@@ -35,16 +35,26 @@ const initialRepoState: RepoState = {
   error: null,
 };
 
-export const useRepoStore = create<RepoState & RepoActions>((set) => ({
-  ...initialRepoState,
-  setRepository: (repository) => set({ repository }),
-  setCommits: (commits) => set({ commits }),
-  setSelectedCommit: (selectedCommit) => set({ selectedCommit }),
-  setFiles: (files) => set({ files }),
-  setLoading: (isLoading) => set({ isLoading }),
-  setError: (error) => set({ error }),
-  reset: () => set(initialRepoState),
-}));
+export const useRepoStore = create<RepoState & RepoActions>()(
+  persist(
+    (set) => ({
+      ...initialRepoState,
+      setRepository: (repository) => set({ repository }),
+      setCommits: (commits) => set({ commits }),
+      setSelectedCommit: (selectedCommit) => set({ selectedCommit }),
+      setFiles: (files) => set({ files }),
+      setLoading: (isLoading) => set({ isLoading }),
+      setError: (error) => set({ error }),
+      reset: () => set(initialRepoState),
+    }),
+    {
+      name: 'jjgui-repo-storage',
+      partialize: (state) => ({
+        repository: state.repository,
+      }),
+    }
+  )
+);
 
 // UI state
 interface UIState {

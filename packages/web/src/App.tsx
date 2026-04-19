@@ -33,7 +33,9 @@ interface DialogState {
 }
 
 function AppContent() {
-  const [repoOpen, setRepoOpen] = useState(false);
+  // Initialize repoOpen based on persisted repository state
+  const persistedRepository = useRepoStore((state) => state.repository);
+  const [repoOpen, setRepoOpen] = useState(!!persistedRepository);
   const { toast } = useToast();
 
   // Dialog state
@@ -98,6 +100,16 @@ function AppContent() {
       setFiles(workingCopyData.status.files);
     }
   }, [workingCopyData, setFiles]);
+
+  // Handle repository restoration failure (e.g., repo was deleted or moved)
+  useEffect(() => {
+    if (logError && repository && repoOpen) {
+      console.error('[App] Failed to load persisted repository:', logError);
+      toast('Repository not found. Please select a repository.', 'error');
+      reset();
+      setRepoOpen(false);
+    }
+  }, [logError, repository, repoOpen, reset, toast]);
 
   // Handle WebSocket messages
   const handleWSMessage = (message: ServerMessage) => {
