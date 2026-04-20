@@ -1,9 +1,15 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import type { Commit } from '@jujutsu-gui/shared';
 import { useUIStore } from '../../stores';
-import { RevisionCell } from './RevisionCell';
+import { RevisionInfo } from './RevisionInfo';
 import { CommitContextMenu } from './CommitContextMenu';
 import { ColumnBookmarkHeader } from './ColumnBookmarkHeader';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 interface RevisionTableProps {
   commits: Commit[];
@@ -116,7 +122,7 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
   onSplit,
   onCreateBookmark,
 }) => {
-  const { showGridLines, gridLayoutOptions } = useUIStore();
+  const { gridLayoutOptions } = useUIStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const bookmarkHeaderRef = useRef<HTMLDivElement>(null);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 });
@@ -228,11 +234,11 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
 
   const gridStyle: React.CSSProperties = {
     display: 'grid',
-    gridTemplateColumns: `repeat(${metrics.maxCol + 1}, ${gridLayoutOptions.columnWidth}px)`,
+    gridTemplateColumns: `repeat(${metrics.maxCol + 1}, ${gridLayoutOptions.columnWidth}px) 1fr`,
     gridAutoRows: `${gridLayoutOptions.rowHeight}px`,
-    width: (metrics.maxCol + 1) * gridLayoutOptions.columnWidth,
+    width: '100%',
+    minWidth: (metrics.maxCol + 1) * gridLayoutOptions.columnWidth + 200, // min-width for graph + some space for info
     height: (metrics.maxRow + 1) * gridLayoutOptions.rowHeight,
-    minWidth: (metrics.maxCol + 1) * gridLayoutOptions.columnWidth,
     backgroundColor: 'transparent',
     position: 'relative',
     zIndex: 10,
@@ -270,14 +276,15 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
   }, [columnBookmarks, metrics.maxCol]);
 
   return (
-    <div className="flex flex-col h-full w-full bg-white dark:bg-gray-950">
+    <div data-testid="revision-table" className="flex flex-col h-full w-full bg-white dark:bg-gray-950">
       {/* Column header row - fixed at top (tasks 3.1, 3.2) */}
       <div
         ref={bookmarkHeaderRef}
-        className="flex shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950 sticky top-0 z-20"
+        className="grid shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950 sticky top-0 z-20"
         style={{
-          width: (metrics.maxCol + 1) * gridLayoutOptions.columnWidth,
-          minWidth: '100%',
+          gridTemplateColumns: gridStyle.gridTemplateColumns,
+          width: gridStyle.width,
+          minWidth: gridStyle.minWidth,
           transform: `translateX(${-scrollLeft}px)`,
         }}
       >
@@ -289,6 +296,9 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
             width={gridLayoutOptions.columnWidth}
           />
         ))}
+        <div className="flex items-center px-4 py-1 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-500 uppercase tracking-wider">
+          Revision Info
+        </div>
       </div>
 
       {/* Scrollable content area */}
@@ -304,35 +314,62 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
           />
 
           <div style={gridStyle}>
-            {visibleCommits.map((commit) => (
-              <div
-                key={commit.id}
-                style={{
-                  gridRow: commit.row !== undefined ? commit.row + 1 : 'auto',
-                  gridColumn: commit.column !== undefined ? commit.column + 1 : 'auto',
-                  position: 'relative',
-                }}
-              >
-                <CommitContextMenu
-                  commit={commit}
-                  onNewChange={onNewChange}
-                  onEditDescription={onEditDescription}
-                  onAbandon={onAbandon}
-                  onRebase={onRebase}
-                  onSquash={onSquash}
-                  onSplit={onSplit}
-                  onCreateBookmark={onCreateBookmark}
-                >
-                  <RevisionCell
-                    commit={commit}
-                    isSelected={selectedCommit?.id === commit.id}
-                    onSelect={onCommitSelect}
-                    onEdit={onCommitEdit}
-                    showGridLines={showGridLines}
+            {visibleCommits.map((commit) => {
+              const row = commit.row !== undefined ? commit.row + 1 : 'auto';
+              const isSelected = selectedCommit?.id === commit.id;
+
+              return (
+                <React.Fragment key={commit.id}>
+                  {/* Full-width background for selection and hover */}
+                  <div
+                    onClick={() => onCommitSelect(commit)}
+                    onDoubleClick={() => onCommitEdit?.(commit)}
+                    style={{
+                      gridRow: row,
+                      gridColumn: '1 / -1',
+                      zIndex: 1,
+                    }}
+                    className={cn(
+                      "transition-colors border-b border-gray-100 dark:border-gray-800 cursor-pointer group",
+                      isSelected 
+                        ? 'bg-blue-50/80 dark:bg-blue-900/20' 
+                        : 'bg-transparent hover:bg-gray-50/50 dark:hover:bg-gray-800/20'
+                    )}
                   />
-                </CommitContextMenu>
-              </div>
-            ))}
+
+                  {/* Revision Info (Metadata) - placed in the last column */}
+                  <div
+                    style={{
+                      gridRow: row,
+                      gridColumn: metrics.maxCol + 2,
+                      zIndex: 10,
+                      position: 'relative',
+                      pointerEvents: 'none', // Let clicks through to background
+                    }}
+                  >
+                    <CommitContextMenu
+                      commit={commit}
+                      onNewChange={onNewChange}
+                      onEditDescription={onEditDescription}
+                      onAbandon={onAbandon}
+                      onRebase={onRebase}
+                      onSquash={onSquash}
+                      onSplit={onSplit}
+                      onCreateBookmark={onCreateBookmark}
+                    >
+                      <div className="w-full h-full pointer-events-auto">
+                        <RevisionInfo
+                          commit={commit}
+                          isSelected={isSelected}
+                          onSelect={onCommitSelect}
+                          onEdit={onCommitEdit}
+                        />
+                      </div>
+                    </CommitContextMenu>
+                  </div>
+                </React.Fragment>
+              );
+            })}
           </div>
         </div>
       </div>
