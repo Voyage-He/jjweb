@@ -26,6 +26,36 @@ interface RevisionTableProps {
 }
 
 const VIRTUAL_BUFFER = 10; // Extra rows to render above and below viewport
+export const CURVE_SPREAD_FACTOR = 0.3;
+const MAX_CURVE_SPREAD_FACTOR = 0.5;
+
+export function calculateCommitLinePath(
+  childColumn: number,
+  childRow: number,
+  parentColumn: number,
+  parentRow: number,
+  options: { rowHeight: number; trackWidth: number },
+  spreadFactor = CURVE_SPREAD_FACTOR
+): string {
+  const { rowHeight, trackWidth } = options;
+  const childX = childColumn * trackWidth + trackWidth / 2;
+  const childY = childRow * rowHeight + rowHeight / 2;
+  const parentX = parentColumn * trackWidth + trackWidth / 2;
+  const parentY = parentRow * rowHeight + rowHeight / 2;
+
+  if (childColumn === parentColumn) {
+    return `M ${childX} ${childY} L ${parentX} ${parentY}`;
+  }
+
+  const direction = childX > parentX ? 1 : -1;
+  const spread = trackWidth * Math.min(Math.max(spreadFactor, 0), MAX_CURVE_SPREAD_FACTOR);
+  const cp1x = childX;
+  const cp2x = parentX + direction * spread;
+  const cp1y = childY + (parentY - childY) / 2;
+  const cp2y = childY + (parentY - childY) / 2;
+
+  return `M ${childX} ${childY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${parentX} ${parentY}`;
+}
 
 const CommitLines: React.FC<{
   commits: Commit[];
@@ -44,25 +74,22 @@ const CommitLines: React.FC<{
     commits.forEach((child) => {
       if (child.row === undefined || child.column === undefined) return;
 
-      const childX = child.column * trackWidth + trackWidth / 2;
-      const childY = child.row * rowHeight + rowHeight / 2;
+      const childColumn = child.column;
+      const childRow = child.row;
+      const childX = childColumn * trackWidth + trackWidth / 2;
+      const childY = childRow * rowHeight + rowHeight / 2;
 
       child.parents.forEach((parentId) => {
         const parent = commitMap.get(parentId);
         if (!parent || parent.row === undefined || parent.column === undefined) return;
 
-        const parentX = parent.column * trackWidth + trackWidth / 2;
-        const parentY = parent.row * rowHeight + rowHeight / 2;
-
-        // Draw a straight line if in the same column, otherwise use a curve
-        let pathData: string;
-        if (child.column === parent.column) {
-          pathData = `M ${childX} ${childY} L ${parentX} ${parentY}`;
-        } else {
-          const cp1y = childY + (parentY - childY) / 2;
-          const cp2y = childY + (parentY - childY) / 2;
-          pathData = `M ${childX} ${childY} C ${childX} ${cp1y}, ${parentX} ${cp2y}, ${parentX} ${parentY}`;
-        }
+        const pathData = calculateCommitLinePath(
+          childColumn,
+          childRow,
+          parent.column,
+          parent.row,
+          { rowHeight, trackWidth }
+        );
 
         p.push(
           <path

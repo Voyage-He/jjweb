@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { Commit } from '@jujutsu-gui/shared';
-import { RevisionTable } from './RevisionTable';
+import { calculateCommitLinePath, RevisionTable } from './RevisionTable';
 
 vi.mock('../../stores', () => ({
   useUIStore: vi.fn(() => ({
@@ -98,5 +98,52 @@ describe('RevisionTable', () => {
     expect(messageCell.textContent?.indexOf('main')).toBeLessThan(
       messageCell.textContent?.indexOf('Add bookmark display') ?? -1
     );
+  });
+
+  it('allows clicking actions in the revision context menu', () => {
+    const commit = makeCommit({
+      description: 'Open context menu',
+    });
+    const onNewChange = vi.fn();
+
+    render(
+      <div style={{ height: 400, width: 900 }}>
+        <RevisionTable
+          commits={[commit]}
+          selectedCommit={null}
+          onCommitSelect={vi.fn()}
+          onNewChange={onNewChange}
+        />
+      </div>
+    );
+
+    fireEvent.contextMenu(screen.getByTestId('revision-message-cell-commit-1'));
+    fireEvent.click(screen.getByText('New Change After'));
+
+    expect(onNewChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('calculates outward curve controls for commits branching to the right', () => {
+    expect(
+      calculateCommitLinePath(1, 0, 0, 1, { rowHeight: 64, trackWidth: 60 })
+    ).toBe('M 90 32 C 90 64, 48 64, 30 96');
+  });
+
+  it('calculates outward curve controls for commits branching to the left', () => {
+    expect(
+      calculateCommitLinePath(0, 0, 1, 1, { rowHeight: 64, trackWidth: 60 })
+    ).toBe('M 30 32 C 30 64, 72 64, 90 96');
+  });
+
+  it('keeps same-column commit lines straight', () => {
+    expect(
+      calculateCommitLinePath(0, 0, 0, 1, { rowHeight: 64, trackWidth: 60 })
+    ).toBe('M 30 32 L 30 96');
+  });
+
+  it('caps the curve spread factor at half the track width', () => {
+    expect(
+      calculateCommitLinePath(1, 0, 0, 1, { rowHeight: 64, trackWidth: 60 }, 0.8)
+    ).toBe('M 90 32 C 90 64, 60 64, 30 96');
   });
 });

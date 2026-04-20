@@ -4,6 +4,7 @@
  */
 
 import { useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import type { Commit } from '@jujutsu-gui/shared';
 import {
   GitBranch,
@@ -77,11 +78,11 @@ export function CommitContextMenu({
       </div>
 
       {/* Context menu overlay */}
-      {menuPosition && (
+      {menuPosition && createPortal(
         <>
           {/* Invisible overlay to close menu when clicking outside */}
           <div
-            className="fixed inset-0 z-40"
+            className="fixed inset-0 z-40 pointer-events-auto"
             onClick={handleOverlayClick}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -91,7 +92,7 @@ export function CommitContextMenu({
 
           {/* Context menu */}
           <div
-            className="fixed z-50 min-w-[180px] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg animate-in fade-in-0 zoom-in-95"
+            className="fixed z-50 min-w-[180px] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg animate-in fade-in-0 zoom-in-95 pointer-events-auto"
             style={{
               left: menuPosition.x,
               top: menuPosition.y,
@@ -170,7 +171,8 @@ export function CommitContextMenu({
               </button>
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </>
   );

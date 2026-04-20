@@ -58,12 +58,12 @@ export async function parseLog(
 
         const json = JSON.parse(jsonPart);
         // Extract bookmarks from the appended part
-        const localBookmarks = bookmarksPart ? bookmarksPart.split(':::').filter(b => b.trim()) : [];
+        const localBookmarks = bookmarksPart ? bookmarksPart.split(':::').filter(b => b.trim()) : undefined;
 
-        // Add local_bookmarks to the JSON object for parseCommitFromJson
+        // Add appended bookmarks when present while preserving JSON-provided bookmarks in tests.
         return {
           ...json,
-          local_bookmarks: localBookmarks,
+          ...(localBookmarks ? { local_bookmarks: localBookmarks } : {}),
         };
       } catch (parseError) {
         console.error(`Failed to parse line ${index + 1}:`, line.slice(0, 200));
@@ -137,61 +137,172 @@ function calculateLayout(commits: Commit[]): Commit[] {
     }
   }
 
-  const assignedColumns = new Map<string, number>();
-  const globallyOccupied = new Set<number>();
+  const forkParents = Array.from(primaryChildrenMap.entries())
+    .filter(([, children]) => children.length > 1)
+    .map(([parent]) => parent);
+  const childOrderOverrides = new Map<string, string[]>();
 
-  function getNextFreeCol(startCol: number): number {
-    let col = startCol;
-    while (globallyOccupied.has(col)) col++;
-    globallyOccupied.add(col);
-    return col;
-  }
+  const sortPrimaryChildren = (children: string[]) => {
+    return [...children].sort((a, b) => {
+      const sDiff = (scores.get(b) || 0) - (scores.get(a) || 0);
+      if (sDiff !== 0) return sDiff;
+      return (changeToIndex.get(a) || 0) - (changeToIndex.get(b) || 0);
+    });
+  };
 
-  console.log('--- Start Layout Calculation (Stable Oldest-First) ---');
-  
-  // Sort roots by score, then by index (oldest first)
-  const roots = commits.filter(c => {
-    const p0 = c.parents.length > 0 ? getStableId(c.parents[0]) : null;
-    return !p0 || !changeToIndex.has(p0);
-  }).sort((a, b) => {
-    const sDiff = (scores.get(b.changeId) || 0) - (scores.get(a.changeId) || 0);
-    if (sDiff !== 0) return sDiff;
-    return (changeToIndex.get(b.changeId) || 0) - (changeToIndex.get(a.changeId) || 0);
-  });
+  function assignColumns(overrides: Map<string, string[]>): Map<string, number> {
+    const assignedColumns = new Map<string, number>();
+    const globallyOccupied = new Set<number>();
 
-  // Process from roots upwards to assign branches
-  for (let i = commits.length - 1; i >= 0; i--) {
-    const commit = commits[i];
-    const myId = commit.changeId;
-    
-    if (!assignedColumns.has(myId)) {
-      const col = getNextFreeCol(0);
-      assignedColumns.set(myId, col);
+    function getNextFreeCol(startCol: number): number {
+      let col = startCol;
+      while (globallyOccupied.has(col)) col++;
+      globallyOccupied.add(col);
+      return col;
     }
-    
-    const myCol = assignedColumns.get(myId)!;
-    const primaryChildren = primaryChildrenMap.get(myId) || [];
-    
-    if (primaryChildren.length > 0) {
-      // THE FIX: When scores are tied, favor the OLDEST child (higher index)
-      primaryChildren.sort((a, b) => {
-        const sDiff = (scores.get(b) || 0) - (scores.get(a) || 0);
-        if (sDiff !== 0) return sDiff;
-        return (changeToIndex.get(b) || 0) - (changeToIndex.get(a) || 0);
-      });
 
-      assignedColumns.set(primaryChildren[0], myCol);
-      console.log(`[Flow] ${primaryChildren[0].slice(0, 4)} inherits Col ${myCol} from parent ${myId.slice(0, 4)}`);
+    // Process from roots upwards to assign branches.
+    for (let i = commits.length - 1; i >= 0; i--) {
+      const commit = commits[i];
+      const myId = commit.changeId;
 
-      for (let k = 1; k < primaryChildren.length; k++) {
-        const cid = primaryChildren[k];
-        const newCol = getNextFreeCol(myCol + 1);
-        assignedColumns.set(cid, newCol);
-        console.log(`[Fork] ${cid.slice(0, 4)} moved right to Col ${newCol}`);
+      if (!assignedColumns.has(myId)) {
+        const col = getNextFreeCol(0);
+        assignedColumns.set(myId, col);
+      }
+
+      const myCol = assignedColumns.get(myId)!;
+      const primaryChildren = primaryChildrenMap.get(myId) || [];
+
+      if (primaryChildren.length > 0) {
+        const orderedChildren = overrides.get(myId) || sortPrimaryChildren(primaryChildren);
+
+        assignedColumns.set(orderedChildren[0], myCol);
+
+        for (let k = 1; k < orderedChildren.length; k++) {
+          const cid = orderedChildren[k];
+          const newCol = getNextFreeCol(myCol + 1);
+          assignedColumns.set(cid, newCol);
+        }
       }
     }
+
+    return assignedColumns;
   }
-  console.log('--- End Layout Calculation ---');
+
+  function countEdgeCrossings(columns: Map<string, number>): number {
+    const edges = commits.flatMap((commit, childRow) => {
+      const childColumn = columns.get(commit.changeId) ?? 0;
+      return commit.parents.map((parentId) => {
+        const parentChangeId = getStableId(parentId);
+        return {
+          childId: commit.changeId,
+          parentId: parentChangeId,
+          y1: childRow,
+          x1: childColumn,
+          y2: changeToIndex.get(parentChangeId) ?? childRow,
+          x2: columns.get(parentChangeId) ?? 0,
+        };
+      }).filter(edge => edge.y1 !== edge.y2);
+    });
+
+    let crossings = 0;
+    for (let i = 0; i < edges.length; i++) {
+      for (let j = i + 1; j < edges.length; j++) {
+        const a = edges[i];
+        const b = edges[j];
+        if (
+          a.childId === b.childId ||
+          a.childId === b.parentId ||
+          a.parentId === b.childId ||
+          a.parentId === b.parentId
+        ) {
+          continue;
+        }
+
+        const yStart = Math.max(Math.min(a.y1, a.y2), Math.min(b.y1, b.y2));
+        const yEnd = Math.min(Math.max(a.y1, a.y2), Math.max(b.y1, b.y2));
+        if (yStart >= yEnd) continue;
+
+        const startY = yStart + 0.001;
+        const endY = yEnd - 0.001;
+        const axStart = interpolateX(a.x1, a.y1, a.x2, a.y2, startY);
+        const bxStart = interpolateX(b.x1, b.y1, b.x2, b.y2, startY);
+        const axEnd = interpolateX(a.x1, a.y1, a.x2, a.y2, endY);
+        const bxEnd = interpolateX(b.x1, b.y1, b.x2, b.y2, endY);
+
+        if ((axStart - bxStart) * (axEnd - bxEnd) < 0) {
+          crossings++;
+        }
+      }
+    }
+    return crossings;
+  }
+
+  function interpolateX(x1: number, y1: number, x2: number, y2: number, y: number): number {
+    return x1 + ((x2 - x1) * (y - y1)) / (y2 - y1);
+  }
+
+  function layoutCost(columns: Map<string, number>): number {
+    let horizontalDistance = 0;
+    let pinPenalty = 0;
+    for (let i = 0; i < commits.length; i++) {
+      const commit = commits[i];
+      const commitColumn = columns.get(commit.changeId) ?? 0;
+      if ((scores.get(commit.changeId) || 0) >= 500 && commitColumn !== 0) {
+        pinPenalty += 100000;
+      }
+      for (const parentId of commit.parents) {
+        const parentChangeId = getStableId(parentId);
+        horizontalDistance += Math.abs(commitColumn - (columns.get(parentChangeId) ?? 0));
+      }
+    }
+    return pinPenalty + countEdgeCrossings(columns) * 1000 + horizontalDistance * 10;
+  }
+
+  function candidateOrders(children: string[]): string[][] {
+    const sorted = sortPrimaryChildren(children);
+    if (children.length <= 4) {
+      return permutations(sorted);
+    }
+    return [
+      sorted,
+      ...sorted.map((child) => [child, ...sorted.filter((candidate) => candidate !== child)]),
+    ];
+  }
+
+  function permutations(items: string[]): string[][] {
+    if (items.length <= 1) return [items];
+    const result: string[][] = [];
+    for (let i = 0; i < items.length; i++) {
+      const head = items[i];
+      const rest = [...items.slice(0, i), ...items.slice(i + 1)];
+      for (const tail of permutations(rest)) {
+        result.push([head, ...tail]);
+      }
+    }
+    return result;
+  }
+
+  for (const parentId of forkParents) {
+    const children = primaryChildrenMap.get(parentId) || [];
+    let bestOrder = sortPrimaryChildren(children);
+    let bestCost = layoutCost(assignColumns(childOrderOverrides));
+
+    for (const order of candidateOrders(children)) {
+      const candidateOverrides = new Map(childOrderOverrides);
+      candidateOverrides.set(parentId, order);
+      const candidateCost = layoutCost(assignColumns(candidateOverrides));
+      if (candidateCost < bestCost) {
+        bestCost = candidateCost;
+        bestOrder = order;
+      }
+    }
+
+    childOrderOverrides.set(parentId, bestOrder);
+  }
+
+  const assignedColumns = assignColumns(childOrderOverrides);
 
   for (let i = 0; i < commits.length; i++) {
     commits[i].row = i;

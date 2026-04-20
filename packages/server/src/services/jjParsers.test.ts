@@ -3,16 +3,83 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { Commit } from '@jujutsu-gui/shared';
 
 // Mock jjExecutor
-vi.mock('./jjExecutor', () => ({
+vi.mock('./jjExecutor.js', () => ({
   jjExecutor: {
     execute: vi.fn(),
   },
 }));
 
-import { jjExecutor } from './jjExecutor';
-import { parseLog, parseStatus, parseDiff, parseBookmarks } from './jjParsers';
+import { jjExecutor } from './jjExecutor.js';
+import { parseLog, parseStatus, parseDiff, parseBookmarks } from './jjParsers.js';
+
+const makeLogCommit = (overrides: Record<string, unknown> = {}) => ({
+  change_id: 'change',
+  commit_id: 'commit',
+  parents: [],
+  author: { name: 'X', email: 'x', timestamp: '2024-01-01 10:00:00 +00:00' },
+  committer: { name: 'X', email: 'x', timestamp: '2024-01-01 10:00:00 +00:00' },
+  description: 'Commit',
+  ...overrides,
+});
+
+const commitLine = (commit: Record<string, unknown>, bookmarks: string[] = []) =>
+  `${JSON.stringify(commit)}|||BOOKMARKS|||${bookmarks.join(':::')}`;
+
+const findCommit = (commits: Commit[], id: string) => commits.find((commit: Commit) => commit.id === id);
+
+const countCommitLineCrossings = (commits: Commit[]) => {
+  const commitMap = new Map(commits.map(commit => [commit.id, commit]));
+  const edges = commits.flatMap((commit) => {
+    if (commit.row === undefined || commit.column === undefined) return [];
+    return commit.parents.map((parentId) => {
+      const parent = commitMap.get(parentId);
+      if (!parent || parent.row === undefined || parent.column === undefined) return null;
+      return {
+        childId: commit.id,
+        parentId,
+        x1: commit.column,
+        y1: commit.row,
+        x2: parent.column,
+        y2: parent.row,
+      };
+    }).filter(edge => edge !== null);
+  });
+
+  let crossings = 0;
+  for (let i = 0; i < edges.length; i++) {
+    for (let j = i + 1; j < edges.length; j++) {
+      const a = edges[i];
+      const b = edges[j];
+      if (
+        a.childId === b.childId ||
+        a.childId === b.parentId ||
+        a.parentId === b.childId ||
+        a.parentId === b.parentId
+      ) {
+        continue;
+      }
+
+      const yStart = Math.max(Math.min(a.y1, a.y2), Math.min(b.y1, b.y2));
+      const yEnd = Math.min(Math.max(a.y1, a.y2), Math.max(b.y1, b.y2));
+      if (yStart >= yEnd) continue;
+
+      const axStart = interpolateTestX(a.x1, a.y1, a.x2, a.y2, yStart + 0.001);
+      const bxStart = interpolateTestX(b.x1, b.y1, b.x2, b.y2, yStart + 0.001);
+      const axEnd = interpolateTestX(a.x1, a.y1, a.x2, a.y2, yEnd - 0.001);
+      const bxEnd = interpolateTestX(b.x1, b.y1, b.x2, b.y2, yEnd - 0.001);
+      if ((axStart - bxStart) * (axEnd - bxEnd) < 0) {
+        crossings++;
+      }
+    }
+  }
+  return crossings;
+};
+
+const interpolateTestX = (x1: number, y1: number, x2: number, y2: number, y: number) =>
+  x1 + ((x2 - x1) * (y - y1)) / (y2 - y1);
 
 describe('JJ Parsers', () => {
   beforeEach(() => {
@@ -138,6 +205,161 @@ describe('JJ Parsers', () => {
       expect(commits[1].column).toBe(1);
       expect(commits[2].id).toBe('C');
       expect(commits[2].column).toBe(0); // Should claim lane 0
+    });
+
+    it('should assign the newest fork child to the closest column when scores are tied', async () => {
+      const newestBranch = makeLogCommit({
+        change_id: 'newest',
+        commit_id: 'NEW',
+        parents: ['BASE'],
+        description: 'Newest branch',
+      });
+      const olderBranch = makeLogCommit({
+        change_id: 'older',
+        commit_id: 'OLD',
+        parents: ['BASE'],
+        description: 'Older branch',
+      });
+      const base = makeLogCommit({
+        change_id: 'base',
+        commit_id: 'BASE',
+        description: 'Base',
+      });
+
+      vi.mocked(jjExecutor.execute).mockResolvedValue({
+        stdout: [newestBranch, olderBranch, base].map(commit => commitLine(commit)).join('\n') + '\n',
+        stderr: '', exitCode: 0, success: true,
+      });
+
+      const commits = await parseLog('/test/repo');
+      expect(findCommit(commits, 'NEW')?.column).toBe(0);
+      expect(findCommit(commits, 'OLD')?.column).toBe(1);
+      expect(findCommit(commits, 'BASE')?.column).toBe(0);
+    });
+
+    it('should keep the main branch in column 0 over a newer unbookmarked branch', async () => {
+      const newerBranch = makeLogCommit({
+        change_id: 'newer',
+        commit_id: 'NEW',
+        parents: ['BASE'],
+        description: 'Newer branch',
+      });
+      const mainBranch = makeLogCommit({
+        change_id: 'main',
+        commit_id: 'MAIN',
+        parents: ['BASE'],
+        description: 'Main branch',
+      });
+      const base = makeLogCommit({
+        change_id: 'base',
+        commit_id: 'BASE',
+        description: 'Base',
+      });
+
+      vi.mocked(jjExecutor.execute).mockResolvedValue({
+        stdout: [
+          commitLine(newerBranch),
+          commitLine(mainBranch, ['main']),
+          commitLine(base),
+        ].join('\n') + '\n',
+        stderr: '', exitCode: 0, success: true,
+      });
+
+      const commits = await parseLog('/test/repo');
+      expect(findCommit(commits, 'MAIN')?.column).toBe(0);
+      expect(findCommit(commits, 'BASE')?.column).toBe(0);
+      expect(findCommit(commits, 'NEW')?.column).toBe(1);
+    });
+
+    it('should keep the working copy and its primary ancestor chain in column 0', async () => {
+      const workingCopy = makeLogCommit({
+        change_id: 'wc',
+        commit_id: 'WC',
+        parents: ['BASE'],
+        description: 'Working copy',
+        working_copy: true,
+      });
+      const mainBranch = makeLogCommit({
+        change_id: 'main',
+        commit_id: 'MAIN',
+        parents: ['BASE'],
+        description: 'Main branch',
+      });
+      const base = makeLogCommit({
+        change_id: 'base',
+        commit_id: 'BASE',
+        description: 'Base',
+      });
+
+      vi.mocked(jjExecutor.execute).mockResolvedValue({
+        stdout: [
+          commitLine(workingCopy),
+          commitLine(mainBranch, ['main']),
+          commitLine(base),
+        ].join('\n') + '\n',
+        stderr: '', exitCode: 0, success: true,
+      });
+
+      const commits = await parseLog('/test/repo');
+      expect(findCommit(commits, 'WC')?.column).toBe(0);
+      expect(findCommit(commits, 'BASE')?.column).toBe(0);
+      expect(findCommit(commits, 'MAIN')?.column).toBe(1);
+    });
+
+    it('should reorder fork children when it reduces line crossings', async () => {
+      const mergeA = makeLogCommit({
+        change_id: 'merge-a',
+        commit_id: 'MA',
+        parents: ['A', 'C'],
+        description: 'Merge C into A',
+      });
+      const mergeB = makeLogCommit({
+        change_id: 'merge-b',
+        commit_id: 'MB',
+        parents: ['B', 'A'],
+        description: 'Merge A into B',
+      });
+      const branchA = makeLogCommit({
+        change_id: 'a',
+        commit_id: 'A',
+        parents: ['BASE'],
+        description: 'Branch A',
+      });
+      const branchB = makeLogCommit({
+        change_id: 'b',
+        commit_id: 'B',
+        parents: ['BASE'],
+        description: 'Branch B',
+      });
+      const branchC = makeLogCommit({
+        change_id: 'c',
+        commit_id: 'C',
+        parents: ['BASE'],
+        description: 'Branch C',
+      });
+      const base = makeLogCommit({
+        change_id: 'base',
+        commit_id: 'BASE',
+        description: 'Base',
+      });
+
+      vi.mocked(jjExecutor.execute).mockResolvedValue({
+        stdout: [
+          mergeA,
+          mergeB,
+          branchA,
+          branchB,
+          branchC,
+          base,
+        ].map(commit => commitLine(commit)).join('\n') + '\n',
+        stderr: '', exitCode: 0, success: true,
+      });
+
+      const commits = await parseLog('/test/repo');
+      expect(countCommitLineCrossings(commits)).toBe(0);
+      expect(findCommit(commits, 'B')?.column).toBe(0);
+      expect(findCommit(commits, 'A')?.column).toBe(1);
+      expect(findCommit(commits, 'C')?.column).toBe(2);
     });
 
     it('should calculate correct grid coordinates for a merge', async () => {
