@@ -1,8 +1,5 @@
-# revision-table-layout Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change optimize-revision-display. Update Purpose after archive.
-## Requirements
 ### Requirement: Revision 信息以独立列展示
 系统 SHALL 将每个 revision 的信息字段以独立的列形式展示，每个列具有独立的表头和宽度配置。
 
@@ -46,12 +43,3 @@ TBD - created by archiving change optimize-revision-display. Update Purpose afte
 - **WHEN** 系统渲染表格
 - **THEN** 列头区域的各列宽度 SHALL 与下方内容行的对应列精确对齐
 - **AND** 列头在水平滚动时 SHALL 保持同步滚动
-
-### Requirement: 列配置存储
-系统 SHALL 将 revision 列配置持久化存储，在用户重新打开应用时恢复配置。
-
-#### Scenario: 配置持久化
-- **WHEN** 用户修改列配置（如调整列宽、列顺序）
-- **THEN** 系统 SHALL 将配置保存到本地存储
-- **AND** 下次启动时 SHALL 恢复用户配置
-

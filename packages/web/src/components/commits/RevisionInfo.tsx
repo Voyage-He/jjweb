@@ -23,14 +23,51 @@ const ChangeIdCell: React.FC<{ commit: Commit }> = ({ commit }) => (
   </span>
 );
 
-const MessageCell: React.FC<{ commit: Commit; isSelected: boolean }> = ({ commit, isSelected }) => (
-  <span className={cn(
-    "text-sm truncate block",
-    isSelected ? "text-blue-900 dark:text-blue-100 font-medium" : "text-gray-900 dark:text-gray-100"
-  )}>
-    {commit.description || <span className="italic text-gray-400 dark:text-gray-500">No description</span>}
-  </span>
-);
+const getFirstMessageLine = (description: string) => description.split(/\r?\n/, 1)[0];
+
+const MessageCell: React.FC<{ commit: Commit; isSelected: boolean }> = ({ commit, isSelected }) => {
+  const firstLine = getFirstMessageLine(commit.description);
+  const bookmarkNames = commit.bookmarks.map((bookmark) => bookmark.name);
+  const hasBookmarks = bookmarkNames.length > 0;
+  const bookmarkTitle = hasBookmarks ? bookmarkNames.join('\n') : undefined;
+
+  return (
+    <div
+      data-testid={`revision-message-cell-${commit.id}`}
+      className="flex min-w-0 w-full items-center gap-2 overflow-hidden whitespace-nowrap"
+    >
+      {hasBookmarks && (
+        <div
+          className="flex min-w-0 max-w-[40%] shrink-0 items-center gap-1 overflow-hidden"
+          title={bookmarkTitle}
+        >
+          {bookmarkNames.map((name) => (
+            <span
+              key={name}
+              className={cn(
+                'min-w-0 max-w-32 truncate rounded px-1.5 py-0.5 text-xs font-medium leading-4',
+                isSelected
+                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-100'
+                  : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'
+              )}
+            >
+              {name}
+            </span>
+          ))}
+        </div>
+      )}
+      <span
+        className={cn(
+          'block min-w-0 flex-1 truncate text-sm',
+          isSelected ? 'font-medium text-blue-900 dark:text-blue-100' : 'text-gray-900 dark:text-gray-100'
+        )}
+        title={commit.description || undefined}
+      >
+        {firstLine || <span className="italic text-gray-400 dark:text-gray-500">No description</span>}
+      </span>
+    </div>
+  );
+};
 
 const AuthorCell: React.FC<{ commit: Commit }> = ({ commit }) => (
   <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
@@ -90,7 +127,7 @@ export const RevisionInfo: React.FC<RevisionInfoProps> = ({
           <div
             key={column.id}
             className={cn(
-              'flex items-center px-3 h-full',
+              'flex min-w-0 items-center px-3 h-full overflow-hidden',
               'border-r border-gray-100 dark:border-gray-800'
             )}
             style={style}
