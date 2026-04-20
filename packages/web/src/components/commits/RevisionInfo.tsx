@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Commit } from '@jujutsu-gui/shared';
+import type { RevisionColumn } from '../../stores';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -12,41 +13,92 @@ interface RevisionInfoProps {
   isSelected: boolean;
   onSelect: (commit: Commit) => void;
   onEdit?: (commit: Commit) => void;
+  columns: RevisionColumn[];
 }
+
+// Individual cell components
+const ChangeIdCell: React.FC<{ commit: Commit }> = ({ commit }) => (
+  <span className="text-xs font-mono font-bold text-blue-600 dark:text-blue-400 truncate">
+    {commit.changeId.slice(0, 8)}
+  </span>
+);
+
+const MessageCell: React.FC<{ commit: Commit; isSelected: boolean }> = ({ commit, isSelected }) => (
+  <span className={cn(
+    "text-sm truncate block",
+    isSelected ? "text-blue-900 dark:text-blue-100 font-medium" : "text-gray-900 dark:text-gray-100"
+  )}>
+    {commit.description || <span className="italic text-gray-400 dark:text-gray-500">No description</span>}
+  </span>
+);
+
+const AuthorCell: React.FC<{ commit: Commit }> = ({ commit }) => (
+  <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+    {commit.author.name}
+  </span>
+);
+
+const DateCell: React.FC<{ commit: Commit }> = ({ commit }) => {
+  const dateStr = commit.author.timestamp
+    ? new Date(commit.author.timestamp * 1000).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    : '-';
+  return (
+    <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+      {dateStr}
+    </span>
+  );
+};
+
+// Map column id to cell component
+const CellComponents: Record<string, React.FC<{ commit: Commit; isSelected: boolean }>> = {
+  changeId: ({ commit }) => <ChangeIdCell commit={commit} />,
+  message: ({ commit, isSelected }) => <MessageCell commit={commit} isSelected={isSelected} />,
+  author: ({ commit }) => <AuthorCell commit={commit} />,
+  date: ({ commit }) => <DateCell commit={commit} />,
+};
 
 export const RevisionInfo: React.FC<RevisionInfoProps> = ({
   commit,
   isSelected,
   onSelect,
   onEdit,
+  columns,
 }) => {
+  const visibleColumns = columns.filter(col => col.visible);
+
   return (
     <div
-      className="relative bg-transparent flex items-center gap-4 px-4 h-full w-full cursor-pointer select-none overflow-hidden"
+      className="relative bg-transparent flex items-center h-full w-full cursor-pointer select-none overflow-hidden"
       onClick={() => onSelect(commit)}
       onDoubleClick={() => onEdit?.(commit)}
     >
-      <div className="flex items-center gap-3 shrink-0">
-        <span className="text-xs font-mono font-bold text-blue-600 dark:text-blue-400">
-          {commit.changeId.slice(0, 8)}
-        </span>
-        <span className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[120px]">
-          {commit.author.name}
-        </span>
-      </div>
-      
-      <div className="flex-1 min-w-0">
-        <span className={cn(
-          "text-sm truncate block",
-          isSelected ? "text-blue-900 dark:text-blue-100 font-medium" : "text-gray-900 dark:text-gray-100"
-        )}>
-          {commit.description || <span className="italic text-gray-400 dark:text-gray-500">No description</span>}
-        </span>
-      </div>
+      {visibleColumns.map((column) => {
+        const isFlex = column.width === 'flex';
+        const style: React.CSSProperties = isFlex
+          ? { flex: 1, minWidth: 100 }
+          : { width: column.width, minWidth: column.width };
 
-      <div className="text-[10px] font-mono text-gray-400 dark:text-gray-500 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-        ({commit.row}, {commit.column})
-      </div>
+        const CellComponent = CellComponents[column.id];
+        if (!CellComponent) return null;
+
+        return (
+          <div
+            key={column.id}
+            className={cn(
+              'flex items-center px-3 h-full',
+              'border-r border-gray-100 dark:border-gray-800'
+            )}
+            style={style}
+          >
+            <CellComponent commit={commit} isSelected={isSelected} />
+          </div>
+        );
+      })}
     </div>
   );
 };

@@ -6,6 +6,21 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Commit, Repository, FileChange } from '@jujutsu-gui/shared';
 
+// Revision column configuration
+export interface RevisionColumn {
+  id: string;
+  label: string;
+  width: number | 'flex';
+  visible: boolean;
+}
+
+const defaultRevisionColumns: RevisionColumn[] = [
+  { id: 'changeId', label: 'Change ID', width: 100, visible: true },
+  { id: 'message', label: 'Message', width: 'flex', visible: true },
+  { id: 'author', label: 'Author', width: 120, visible: true },
+  { id: 'date', label: 'Date', width: 140, visible: true },
+];
+
 // Repository state
 interface RepoState {
   repository: Repository | null;
@@ -66,8 +81,10 @@ interface UIState {
   showGridLines: boolean;
   gridLayoutOptions: {
     rowHeight: number;
-    columnWidth: number;
+    trackWidth: number;
   };
+  maxGraphWidth: number;
+  revisionColumns: RevisionColumn[];
 }
 
 interface UIActions {
@@ -78,6 +95,7 @@ interface UIActions {
   toggleCommandPalette: () => void;
   toggleGridLines: () => void;
   setGridLayoutOptions: (options: Partial<UIState['gridLayoutOptions']>) => void;
+  setRevisionColumns: (columns: RevisionColumn[]) => void;
 }
 
 export const useUIStore = create<UIState & UIActions>()(
@@ -91,8 +109,10 @@ export const useUIStore = create<UIState & UIActions>()(
       showGridLines: true,
       gridLayoutOptions: {
         rowHeight: 64,
-        columnWidth: 200,
+        trackWidth: 60,
       },
+      maxGraphWidth: 800,
+      revisionColumns: defaultRevisionColumns,
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       toggleDetailPanel: () => set((state) => ({ detailPanelOpen: !state.detailPanelOpen })),
       setActiveTab: (activeTab) => set({ activeTab }),
@@ -103,6 +123,7 @@ export const useUIStore = create<UIState & UIActions>()(
         set((state) => ({
           gridLayoutOptions: { ...state.gridLayoutOptions, ...options },
         })),
+      setRevisionColumns: (revisionColumns) => set({ revisionColumns }),
     }),
     {
       name: 'jjgui-ui-storage',
@@ -110,6 +131,7 @@ export const useUIStore = create<UIState & UIActions>()(
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,
         showGridLines: state.showGridLines,
+        revisionColumns: state.revisionColumns,
       }),
     }
   )

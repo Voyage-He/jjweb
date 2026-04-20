@@ -4,6 +4,7 @@ import { useUIStore } from '../../stores';
 import { RevisionInfo } from './RevisionInfo';
 import { CommitContextMenu } from './CommitContextMenu';
 import { ColumnBookmarkHeader } from './ColumnBookmarkHeader';
+import { RevisionColumnHeader } from './RevisionColumnHeader';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -30,9 +31,9 @@ const VIRTUAL_BUFFER = 10; // Extra rows to render above and below viewport
 const CommitLines: React.FC<{
   commits: Commit[];
   metrics: { maxCol: number; maxRow: number };
-  options: { rowHeight: number; columnWidth: number };
+  options: { rowHeight: number; trackWidth: number };
 }> = ({ commits, metrics, options }) => {
-  const { rowHeight, columnWidth } = options;
+  const { rowHeight, trackWidth } = options;
   const commitMap = useMemo(() => {
     const map = new Map<string, Commit>();
     commits.forEach((c) => map.set(c.id, c));
@@ -44,14 +45,14 @@ const CommitLines: React.FC<{
     commits.forEach((child) => {
       if (child.row === undefined || child.column === undefined) return;
 
-      const childX = child.column * columnWidth + columnWidth / 2;
+      const childX = child.column * trackWidth + trackWidth / 2;
       const childY = child.row * rowHeight + rowHeight / 2;
 
       child.parents.forEach((parentId) => {
         const parent = commitMap.get(parentId);
         if (!parent || parent.row === undefined || parent.column === undefined) return;
 
-        const parentX = parent.column * columnWidth + columnWidth / 2;
+        const parentX = parent.column * trackWidth + trackWidth / 2;
         const parentY = parent.row * rowHeight + rowHeight / 2;
 
         // Draw a straight line if in the same column, otherwise use a curve
@@ -70,31 +71,31 @@ const CommitLines: React.FC<{
             d={pathData}
             fill="none"
             stroke="currentColor"
-            strokeWidth="2.5"
+            strokeWidth="2"
             className="text-gray-400 dark:text-gray-500 opacity-60 transition-opacity hover:opacity-100"
           />
         );
       });
-      
+
       // Draw a dot at the revision's own position
       p.push(
         <circle
           key={`${child.id}-dot`}
           cx={childX}
           cy={childY}
-          r={4}
+          r={5}
           fill="currentColor"
           className="text-gray-400 dark:text-gray-500"
         />
       );
     });
     return p;
-  }, [commits, commitMap, rowHeight, columnWidth]);
+  }, [commits, commitMap, rowHeight, trackWidth]);
 
   return (
     <svg
       className="absolute top-0 left-0 pointer-events-none"
-      width={(metrics.maxCol + 1) * columnWidth}
+      width={(metrics.maxCol + 1) * trackWidth}
       height={(metrics.maxRow + 1) * rowHeight}
       style={{ zIndex: 5 }}
     >
@@ -122,7 +123,7 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
   onSplit,
   onCreateBookmark,
 }) => {
-  const { gridLayoutOptions } = useUIStore();
+  const { gridLayoutOptions, maxGraphWidth, revisionColumns } = useUIStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const bookmarkHeaderRef = useRef<HTMLDivElement>(null);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 });
@@ -232,12 +233,15 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
     return { maxCol, maxRow };
   }, [commits]);
 
+  // Calculate graph width based on branch count with max limit
+  const graphWidth = Math.min((metrics.maxCol + 1) * gridLayoutOptions.trackWidth, maxGraphWidth);
+
   const gridStyle: React.CSSProperties = {
     display: 'grid',
-    gridTemplateColumns: `repeat(${metrics.maxCol + 1}, ${gridLayoutOptions.columnWidth}px) 1fr`,
+    gridTemplateColumns: `${graphWidth}px 1fr`,
     gridAutoRows: `${gridLayoutOptions.rowHeight}px`,
     width: '100%',
-    minWidth: (metrics.maxCol + 1) * gridLayoutOptions.columnWidth + 200, // min-width for graph + some space for info
+    minWidth: graphWidth + 200, // min-width for graph + some space for info
     height: (metrics.maxRow + 1) * gridLayoutOptions.rowHeight,
     backgroundColor: 'transparent',
     position: 'relative',
@@ -277,7 +281,7 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
 
   return (
     <div data-testid="revision-table" className="flex flex-col h-full w-full bg-white dark:bg-gray-950">
-      {/* Column header row - fixed at top (tasks 3.1, 3.2) */}
+      {/* Column header row - fixed at top */}
       <div
         ref={bookmarkHeaderRef}
         className="grid shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950 sticky top-0 z-20"
@@ -288,17 +292,19 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
           transform: `translateX(${-scrollLeft}px)`,
         }}
       >
-        {columnHeaders.map((header, index) => (
-          <ColumnBookmarkHeader
-            key={index}
-            firstBookmark={header.firstBookmark}
-            allBookmarks={header.allBookmarks}
-            width={gridLayoutOptions.columnWidth}
-          />
-        ))}
-        <div className="flex items-center px-4 py-1 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-500 uppercase tracking-wider">
-          Revision Info
+        {/* Graph column header with bookmarks */}
+        <div className="flex bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+          {columnHeaders.map((header, index) => (
+            <ColumnBookmarkHeader
+              key={index}
+              firstBookmark={header.firstBookmark}
+              allBookmarks={header.allBookmarks}
+              width={gridLayoutOptions.trackWidth}
+            />
+          ))}
         </div>
+        {/* Revision info column headers */}
+        <RevisionColumnHeader columns={revisionColumns} />
       </div>
 
       {/* Scrollable content area */}
@@ -337,11 +343,11 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
                     )}
                   />
 
-                  {/* Revision Info (Metadata) - placed in the last column */}
+                  {/* Revision Info (Metadata) - placed in the second column */}
                   <div
                     style={{
                       gridRow: row,
-                      gridColumn: metrics.maxCol + 2,
+                      gridColumn: 2,
                       zIndex: 10,
                       position: 'relative',
                       pointerEvents: 'none', // Let clicks through to background
@@ -363,6 +369,7 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
                           isSelected={isSelected}
                           onSelect={onCommitSelect}
                           onEdit={onCommitEdit}
+                          columns={revisionColumns}
                         />
                       </div>
                     </CommitContextMenu>
