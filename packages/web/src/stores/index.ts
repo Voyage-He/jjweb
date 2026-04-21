@@ -108,8 +108,8 @@ export const useUIStore = create<UIState & UIActions>()(
       commandPaletteOpen: false,
       showGridLines: true,
       gridLayoutOptions: {
-        rowHeight: 64,
-        trackWidth: 60,
+        rowHeight: 48,
+        trackWidth: 32,
       },
       maxGraphWidth: 800,
       revisionColumns: defaultRevisionColumns,

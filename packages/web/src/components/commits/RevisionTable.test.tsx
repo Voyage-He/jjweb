@@ -6,8 +6,8 @@ import { calculateCommitLinePath, RevisionTable } from './RevisionTable';
 vi.mock('../../stores', () => ({
   useUIStore: vi.fn(() => ({
     gridLayoutOptions: {
-      rowHeight: 64,
-      trackWidth: 60,
+      rowHeight: 48,
+      trackWidth: 32,
     },
     maxGraphWidth: 800,
     revisionColumns: [
@@ -125,25 +125,25 @@ describe('RevisionTable', () => {
 
   it('calculates outward curve controls for commits branching to the right', () => {
     expect(
-      calculateCommitLinePath(1, 0, 0, 1, { rowHeight: 64, trackWidth: 60 })
-    ).toBe('M 90 32 C 90 64, 48 64, 30 96');
+      calculateCommitLinePath(1, 0, 0, 1, { rowHeight: 48, trackWidth: 32 })
+    ).toBe('M 48 24 C 48 48, 25.6 48, 16 72');
   });
 
   it('calculates outward curve controls for commits branching to the left', () => {
     expect(
-      calculateCommitLinePath(0, 0, 1, 1, { rowHeight: 64, trackWidth: 60 })
-    ).toBe('M 30 32 C 30 64, 72 64, 90 96');
+      calculateCommitLinePath(0, 0, 1, 1, { rowHeight: 48, trackWidth: 32 })
+    ).toBe('M 16 24 C 16 48, 38.4 48, 48 72');
   });
 
   it('keeps same-column commit lines straight', () => {
     expect(
-      calculateCommitLinePath(0, 0, 0, 1, { rowHeight: 64, trackWidth: 60 })
-    ).toBe('M 30 32 L 30 96');
+      calculateCommitLinePath(0, 0, 0, 1, { rowHeight: 48, trackWidth: 32 })
+    ).toBe('M 16 24 L 16 72');
   });
 
   it('caps the curve spread factor at half the track width', () => {
     expect(
-      calculateCommitLinePath(1, 0, 0, 1, { rowHeight: 64, trackWidth: 60 }, 0.8)
-    ).toBe('M 90 32 C 90 64, 60 64, 30 96');
+      calculateCommitLinePath(1, 0, 0, 1, { rowHeight: 48, trackWidth: 32 }, 0.8)
+    ).toBe('M 48 24 C 48 48, 32 48, 16 72');
   });
 });
