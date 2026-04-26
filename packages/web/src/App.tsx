@@ -5,7 +5,6 @@ import { useRepoStore } from './stores';
 import { Layout } from './components/layout';
 import { RepoSelectView } from './components/repo';
 import { RevisionTable } from './components/commits';
-import { CommitDetail } from './components/commits/CommitDetail';
 import { WorkingCopyPanel } from './components/working-copy';
 import { useWebSocket } from './hooks/useWebSocket';
 import { apiClient } from './api/client';
@@ -62,7 +61,7 @@ function AppContent() {
   const reset = useRepoStore((state) => state.reset);
 
   // Fetch commits when repository is open
-  const { data: logData, refetch: refetchLog, isLoading: logLoading, error: logError } = useQuery({
+  const { data: logData, refetch: refetchLog, error: logError } = useQuery({
     queryKey: ['log', repository?.path],
     queryFn: () => apiClient.getLog({ limit: 200 }),
     enabled: !!repository,
@@ -213,18 +212,6 @@ function AppContent() {
             selectedCommit={selectedCommit}
             onCommitSelect={handleCommitSelect}
             onCommitEdit={handleEditRevision}
-            onNewChange={handleNewChange}
-            onEditDescription={handleEditDescription}
-            onAbandon={handleAbandon}
-            onRebase={handleRebase}
-            onSquash={handleSquash}
-            onSplit={handleSplit}
-            onCreateBookmark={handleCreateBookmark}
-          />
-        }
-        detail={
-          <CommitDetail
-            commit={selectedCommit}
             onNewChange={handleNewChange}
             onEditDescription={handleEditDescription}
             onAbandon={handleAbandon}

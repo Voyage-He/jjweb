@@ -383,6 +383,8 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
                 <React.Fragment key={commit.id}>
                   {/* Full-width background for selection and hover */}
                   <div
+                    data-testid={`revision-row-${commit.id}`}
+                    aria-selected={isSelected}
                     onClick={() => onCommitSelect(commit)}
                     onDoubleClick={() => onCommitEdit?.(commit)}
                     onMouseEnter={() => setHoveredCommitId(commit.id)}

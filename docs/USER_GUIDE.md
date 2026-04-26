@@ -29,11 +29,10 @@ This guide covers the basic operations in Jujutsu GUI.
 
 ### Main Layout
 
-The interface is divided into three main panels:
+The interface is divided into two main work areas:
 
 - **Left Sidebar**: File explorer and working copy status
-- **Center**: Commit graph visualization
-- **Right Panel**: Commit details and diff viewer
+- **Main Content**: Commit graph, revision list, and primary revision operations
 
 ### Commit Graph
 

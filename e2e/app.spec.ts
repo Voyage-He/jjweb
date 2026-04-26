@@ -104,15 +104,24 @@ test.describe('Repository Management', () => {
 
 test.describe('Commit Graph', () => {
   test.beforeEach(async ({ page }) => {
+    const repository = {
+      name: 'test-repo',
+      path: '/path/to/test-repo',
+      jjVersion: '0.15.0',
+    };
+
+    await page.addInitScript((repo) => {
+      window.localStorage.setItem(
+        'jjgui-repo-storage',
+        JSON.stringify({ state: { repository: repo }, version: 0 })
+      );
+    }, repository);
+
     // Mock a repository being open
     await page.route('**/api/repo/status', async (route) => {
       await route.fulfill({
         json: {
-          repository: {
-            name: 'test-repo',
-            path: '/path/to/test-repo',
-            jjVersion: '0.15.0',
-          },
+          repository,
         },
       });
     });
@@ -129,10 +138,25 @@ test.describe('Commit Graph', () => {
               parents: [],
               bookmarks: [{ name: 'main', target: 'a1b2c3d4', isRemote: false }],
               tags: [],
+              row: 0,
+              column: 0,
             },
           ],
           hasMore: false,
           total: 1,
+        },
+      });
+    });
+
+    await page.route('**/api/working-copy/status', async (route) => {
+      await route.fulfill({
+        json: {
+          status: {
+            changeId: 'z1234567',
+            files: [],
+            hasConflicts: false,
+            summary: { added: 0, modified: 0, deleted: 0, untracked: 0, conflicts: 0 },
+          },
         },
       });
     });
@@ -146,13 +170,16 @@ test.describe('Commit Graph', () => {
     await expect(table).toBeVisible();
   });
 
-  test('should show commit details on selection', async ({ page }) => {
+  test('should select a revision without showing a detail sidebar', async ({ page }) => {
     // Click on a row in the revision table
     const table = page.locator('[data-testid="revision-table"]');
-    await table.click({ position: { x: 50, y: 50 } });
+    await expect(table).toBeVisible();
+    await page.getByTestId('revision-message-cell-a1b2c3d4').click();
 
-    // Detail panel should show commit info
+    // Revision selection remains available in the main table
+    await expect(page.getByTestId('revision-row-a1b2c3d4')).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByText('Initial commit')).toBeVisible();
+    await expect(page.getByTitle('Toggle detail panel')).toHaveCount(0);
   });
 });
 

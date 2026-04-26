@@ -392,7 +392,6 @@ function ShortcutsSettings() {
     { keys: ['Ctrl', 'K'], action: 'Open command palette' },
     { keys: ['Ctrl', ','], action: 'Open settings' },
     { keys: ['Ctrl', 'B'], action: 'Toggle sidebar' },
-    { keys: ['Ctrl', 'D'], action: 'Toggle detail panel' },
     { keys: ['↑', 'k'], action: 'Navigate up in graph' },
     { keys: ['↓', 'j'], action: 'Navigate down in graph' },
     { keys: ['←', 'h'], action: 'Navigate to parent' },

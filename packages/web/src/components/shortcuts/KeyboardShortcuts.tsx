@@ -107,7 +107,6 @@ export function createDefaultShortcuts({
   onNavigateLeft,
   onNavigateRight,
   onToggleSidebar,
-  onToggleDetailPanel,
   onFocusSearch,
 }: {
   onNewChange?: () => void;
@@ -122,7 +121,6 @@ export function createDefaultShortcuts({
   onNavigateLeft?: () => void;
   onNavigateRight?: () => void;
   onToggleSidebar?: () => void;
-  onToggleDetailPanel?: () => void;
   onFocusSearch?: () => void;
 }): KeyboardShortcut[] {
   const shortcuts: KeyboardShortcut[] = [];
@@ -253,15 +251,6 @@ export function createDefaultShortcuts({
       ctrl: true,
       action: onToggleSidebar,
       description: 'Toggle sidebar',
-    });
-  }
-
-  if (onToggleDetailPanel) {
-    shortcuts.push({
-      key: 'd',
-      ctrl: true,
-      action: onToggleDetailPanel,
-      description: 'Toggle detail panel',
     });
   }
 

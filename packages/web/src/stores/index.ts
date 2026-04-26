@@ -74,7 +74,6 @@ export const useRepoStore = create<RepoState & RepoActions>()(
 // UI state
 interface UIState {
   sidebarOpen: boolean;
-  detailPanelOpen: boolean;
   activeTab: 'commits' | 'files' | 'operations';
   theme: 'light' | 'dark' | 'system';
   commandPaletteOpen: boolean;
@@ -89,7 +88,6 @@ interface UIState {
 
 interface UIActions {
   toggleSidebar: () => void;
-  toggleDetailPanel: () => void;
   setActiveTab: (tab: UIState['activeTab']) => void;
   setTheme: (theme: UIState['theme']) => void;
   toggleCommandPalette: () => void;
@@ -102,7 +100,6 @@ export const useUIStore = create<UIState & UIActions>()(
   persist(
     (set) => ({
       sidebarOpen: true,
-      detailPanelOpen: true,
       activeTab: 'commits',
       theme: 'system',
       commandPaletteOpen: false,
@@ -114,7 +111,6 @@ export const useUIStore = create<UIState & UIActions>()(
       maxGraphWidth: 800,
       revisionColumns: defaultRevisionColumns,
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
-      toggleDetailPanel: () => set((state) => ({ detailPanelOpen: !state.detailPanelOpen })),
       setActiveTab: (activeTab) => set({ activeTab }),
       setTheme: (theme) => set({ theme }),
       toggleCommandPalette: () => set((state) => ({ commandPaletteOpen: !state.commandPaletteOpen })),
