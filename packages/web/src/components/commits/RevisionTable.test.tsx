@@ -42,14 +42,14 @@ const makeCommit = (overrides: Partial<Commit> = {}): Commit => ({
   ...overrides,
 });
 
-const renderRevisionTable = (commits: Commit[]) => {
+const renderRevisionTable = (commits: Commit[], selectedCommit: Commit | null = null) => {
   const onCommitSelect = vi.fn();
 
   render(
     <div style={{ height: 400, width: 900 }}>
       <RevisionTable
         commits={commits}
-        selectedCommit={null}
+        selectedCommit={selectedCommit}
         onCommitSelect={onCommitSelect}
       />
     </div>
@@ -57,6 +57,8 @@ const renderRevisionTable = (commits: Commit[]) => {
 
   return { onCommitSelect };
 };
+
+const svgClass = (testId: string) => screen.getByTestId(testId).getAttribute('class') ?? '';
 
 describe('RevisionTable', () => {
   beforeEach(() => {
@@ -145,5 +147,184 @@ describe('RevisionTable', () => {
     expect(
       calculateCommitLinePath(1, 0, 0, 1, { rowHeight: 48, trackWidth: 32 }, 0.8)
     ).toBe('M 48 24 C 48 48, 32 48, 16 72');
+  });
+
+  it('uses bus routing for cross-column edges that span multiple rows', () => {
+    expect(
+      calculateCommitLinePath(3, 0, 0, 4, { rowHeight: 48, trackWidth: 32 })
+    ).toBe('M 112 24 L 112 199.2 L 16 199.2 L 16 216');
+  });
+
+  it('uses curves for adjacent-column edges that span multiple rows', () => {
+    expect(
+      calculateCommitLinePath(1, 0, 0, 4, { rowHeight: 48, trackWidth: 32 })
+    ).toBe('M 48 24 C 48 120, 25.6 120, 16 216');
+  });
+
+  it('separates multi-parent bus routes near the parent row', () => {
+    const firstParentPath = calculateCommitLinePath(
+      3,
+      0,
+      0,
+      4,
+      { rowHeight: 48, trackWidth: 32 },
+      0.3,
+      { parentIndex: 0, parentCount: 3 }
+    );
+    const lastParentPath = calculateCommitLinePath(
+      3,
+      0,
+      0,
+      4,
+      { rowHeight: 48, trackWidth: 32 },
+      0.3,
+      { parentIndex: 2, parentCount: 3 }
+    );
+
+    expect(firstParentPath).toBe('M 107 24 L 107 195.36 L 16 195.36 L 16 216');
+    expect(lastParentPath).toBe('M 117 24 L 117 203.04 L 16 203.04 L 16 216');
+  });
+
+  it('offsets multi-parent edges so they do not share the same path', () => {
+    const firstParentPath = calculateCommitLinePath(
+      1,
+      0,
+      0,
+      1,
+      { rowHeight: 48, trackWidth: 32 },
+      0.3,
+      { parentIndex: 0, parentCount: 2 }
+    );
+    const secondParentPath = calculateCommitLinePath(
+      1,
+      0,
+      0,
+      1,
+      { rowHeight: 48, trackWidth: 32 },
+      0.3,
+      { parentIndex: 1, parentCount: 2 }
+    );
+
+    expect(firstParentPath).toBe('M 45.5 24 C 45.5 48, 23.1 48, 16 72');
+    expect(secondParentPath).toBe('M 50.5 24 C 50.5 48, 28.1 48, 16 72');
+    expect(firstParentPath).not.toBe(secondParentPath);
+  });
+
+  it('keeps same-column multi-parent edges straight', () => {
+    expect(
+      calculateCommitLinePath(
+        0,
+        0,
+        0,
+        1,
+        { rowHeight: 48, trackWidth: 32 },
+        0.3,
+        { parentIndex: 0, parentCount: 2 }
+      )
+    ).toBe('M 16 24 L 16 72');
+  });
+
+  it('marks merge edges with a weaker default visual class', () => {
+    const merge = makeCommit({
+      id: 'merge',
+      changeId: 'merge-change',
+      parents: ['parent-1', 'parent-2'],
+      description: 'Merge commit',
+      row: 0,
+      column: 1,
+    });
+    const parent1 = makeCommit({
+      id: 'parent-1',
+      changeId: 'parent-1-change',
+      description: 'Primary parent',
+      row: 1,
+      column: 1,
+    });
+    const parent2 = makeCommit({
+      id: 'parent-2',
+      changeId: 'parent-2-change',
+      description: 'Merge parent',
+      row: 2,
+      column: 0,
+    });
+
+    renderRevisionTable([merge, parent1, parent2]);
+
+    expect(svgClass('revision-graph-edge-merge-parent-1')).toContain('opacity-70');
+    expect(svgClass('revision-graph-edge-merge-parent-2')).toContain('opacity-45');
+  });
+
+  it('keeps selected revision relationships highlighted', () => {
+    const child = makeCommit({
+      id: 'child',
+      changeId: 'child-change',
+      parents: ['parent'],
+      description: 'Child',
+      row: 0,
+      column: 0,
+    });
+    const parent = makeCommit({
+      id: 'parent',
+      changeId: 'parent-change',
+      description: 'Parent',
+      row: 1,
+      column: 0,
+    });
+    const unrelated = makeCommit({
+      id: 'unrelated',
+      changeId: 'unrelated-change',
+      description: 'Unrelated',
+      row: 2,
+      column: 1,
+    });
+
+    renderRevisionTable([child, parent, unrelated], child);
+
+    expect(svgClass('revision-graph-edge-child-parent')).toContain('opacity-100');
+    expect(svgClass('revision-graph-node-unrelated')).toContain('opacity-25');
+  });
+
+  it('uses hover relationships before returning to selected relationships', () => {
+    const selected = makeCommit({
+      id: 'selected',
+      changeId: 'selected-change',
+      parents: ['selected-parent'],
+      description: 'Selected',
+      row: 0,
+      column: 0,
+    });
+    const selectedParent = makeCommit({
+      id: 'selected-parent',
+      changeId: 'selected-parent-change',
+      description: 'Selected parent',
+      row: 1,
+      column: 0,
+    });
+    const hovered = makeCommit({
+      id: 'hovered',
+      changeId: 'hovered-change',
+      parents: ['hovered-parent'],
+      description: 'Hovered',
+      row: 2,
+      column: 1,
+    });
+    const hoveredParent = makeCommit({
+      id: 'hovered-parent',
+      changeId: 'hovered-parent-change',
+      description: 'Hovered parent',
+      row: 3,
+      column: 1,
+    });
+
+    renderRevisionTable([selected, selectedParent, hovered, hoveredParent], selected);
+
+    expect(svgClass('revision-graph-edge-selected-selected-parent')).toContain('opacity-100');
+
+    fireEvent.mouseEnter(screen.getByTestId('revision-graph-node-hovered'));
+    expect(svgClass('revision-graph-edge-hovered-hovered-parent')).toContain('opacity-100');
+    expect(svgClass('revision-graph-edge-selected-selected-parent')).toContain('opacity-20');
+
+    fireEvent.mouseLeave(screen.getByTestId('revision-graph-node-hovered'));
+    expect(svgClass('revision-graph-edge-selected-selected-parent')).toContain('opacity-100');
   });
 });

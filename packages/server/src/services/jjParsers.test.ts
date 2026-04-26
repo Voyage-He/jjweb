@@ -51,8 +51,8 @@ const countCommitLineCrossings = (commits: Commit[]) => {
   let crossings = 0;
   for (let i = 0; i < edges.length; i++) {
     for (let j = i + 1; j < edges.length; j++) {
-      const a = edges[i];
-      const b = edges[j];
+      const a = edges[i]!;
+      const b = edges[j]!;
       if (
         a.childId === b.childId ||
         a.childId === b.parentId ||
@@ -304,6 +304,109 @@ describe('JJ Parsers', () => {
       expect(findCommit(commits, 'WC')?.column).toBe(0);
       expect(findCommit(commits, 'BASE')?.column).toBe(0);
       expect(findCommit(commits, 'MAIN')?.column).toBe(1);
+    });
+
+    it('should choose main before master when pinning a bookmark mainline', async () => {
+      const masterBranch = makeLogCommit({
+        change_id: 'master',
+        commit_id: 'MASTER',
+        parents: ['BASE'],
+        description: 'Master branch',
+      });
+      const mainBranch = makeLogCommit({
+        change_id: 'main',
+        commit_id: 'MAIN',
+        parents: ['BASE'],
+        description: 'Main branch',
+      });
+      const base = makeLogCommit({
+        change_id: 'base',
+        commit_id: 'BASE',
+        description: 'Base',
+      });
+
+      vi.mocked(jjExecutor.execute).mockResolvedValue({
+        stdout: [
+          commitLine(masterBranch, ['master']),
+          commitLine(mainBranch, ['main']),
+          commitLine(base),
+        ].join('\n') + '\n',
+        stderr: '', exitCode: 0, success: true,
+      });
+
+      const commits = await parseLog('/test/repo');
+      expect(findCommit(commits, 'MAIN')?.column).toBe(0);
+      expect(findCommit(commits, 'BASE')?.column).toBe(0);
+      expect(findCommit(commits, 'MASTER')?.column).toBe(1);
+    });
+
+    it('should keep the pinned mainline child on its parent column', async () => {
+      const sideBranch = makeLogCommit({
+        change_id: 'side',
+        commit_id: 'SIDE',
+        parents: ['BASE'],
+        description: 'Side branch',
+      });
+      const mainBranch = makeLogCommit({
+        change_id: 'main',
+        commit_id: 'MAIN',
+        parents: ['BASE'],
+        description: 'Main branch',
+      });
+      const base = makeLogCommit({
+        change_id: 'base',
+        commit_id: 'BASE',
+        description: 'Base',
+      });
+
+      vi.mocked(jjExecutor.execute).mockResolvedValue({
+        stdout: [
+          commitLine(sideBranch),
+          commitLine(mainBranch, ['main']),
+          commitLine(base),
+        ].join('\n') + '\n',
+        stderr: '', exitCode: 0, success: true,
+      });
+
+      const commits = await parseLog('/test/repo');
+      expect(findCommit(commits, 'BASE')?.column).toBe(0);
+      expect(findCommit(commits, 'MAIN')?.column).toBe(findCommit(commits, 'BASE')?.column);
+      expect(findCommit(commits, 'SIDE')?.column).toBe(1);
+    });
+
+    it('should return stable columns for repeated equivalent layouts', async () => {
+      const branchA = makeLogCommit({
+        change_id: 'a',
+        commit_id: 'A',
+        parents: ['BASE'],
+        description: 'Branch A',
+      });
+      const branchB = makeLogCommit({
+        change_id: 'b',
+        commit_id: 'B',
+        parents: ['BASE'],
+        description: 'Branch B',
+      });
+      const base = makeLogCommit({
+        change_id: 'base',
+        commit_id: 'BASE',
+        description: 'Base',
+      });
+      const stdout = [branchA, branchB, base].map(commit => commitLine(commit)).join('\n') + '\n';
+
+      vi.mocked(jjExecutor.execute).mockResolvedValue({
+        stdout,
+        stderr: '', exitCode: 0, success: true,
+      });
+
+      const first = await parseLog('/test/repo');
+      vi.mocked(jjExecutor.execute).mockResolvedValue({
+        stdout,
+        stderr: '', exitCode: 0, success: true,
+      });
+
+      const second = await parseLog('/test/repo');
+      expect(first.map(commit => [commit.id, commit.column])).toEqual(second.map(commit => [commit.id, commit.column]));
     });
 
     it('should reorder fork children when it reduces line crossings', async () => {

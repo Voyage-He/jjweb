@@ -97,28 +97,40 @@ function calculateLayout(commits: Commit[]): Commit[] {
 
   const commitToChange = new Map<string, string>();
   const changeToIndex = new Map<string, number>();
+  const commitByChange = new Map<string, Commit>();
   for (let i = 0; i < commits.length; i++) {
     commitToChange.set(commits[i].id, commits[i].changeId);
     changeToIndex.set(commits[i].changeId, i);
+    commitByChange.set(commits[i].changeId, commits[i]);
   }
   const getStableId = (cid: string) => commitToChange.get(cid) || cid;
 
   const scores = new Map<string, number>();
   const primaryChildrenMap = new Map<string, string[]>();
+  const mainlinePriority = new Map<string, number>();
+
+  function getCommitMainlinePriority(commit: Commit): number {
+    if (commit.isWorkingCopy) return 1000;
+
+    let priority = 0;
+    for (const bookmark of commit.bookmarks) {
+      const name = bookmark.name.toLowerCase();
+      if (name === 'main' || name.endsWith('/main')) priority = Math.max(priority, 900);
+      else if (name === 'master' || name.endsWith('/master')) priority = Math.max(priority, 800);
+      else if (name === 'trunk' || name.endsWith('/trunk')) priority = Math.max(priority, 700);
+      else if (name === 'default' || name.endsWith('/default')) priority = Math.max(priority, 600);
+      else if (name === '@') priority = Math.max(priority, 500);
+      else priority = Math.max(priority, 100);
+    }
+    return priority;
+  }
 
   for (const commit of commits) {
     const myId = commit.changeId;
-    let score = 1;
-    if (commit.isWorkingCopy) score = 1000;
-    for (const b of commit.bookmarks) {
-      const name = b.name.toLowerCase();
-      if (['main', 'master', 'trunk', 'default', '@'].some(n => name.includes(n))) {
-        score = Math.max(score, 500);
-      } else {
-        score = Math.max(score, 100);
-      }
-    }
+    const priority = getCommitMainlinePriority(commit);
+    const score = Math.max(1, priority);
     scores.set(myId, score);
+    mainlinePriority.set(myId, priority);
 
     if (commit.parents.length > 0) {
       const primaryParentId = getStableId(commit.parents[0]);
@@ -137,6 +149,28 @@ function calculateLayout(commits: Commit[]): Commit[] {
     }
   }
 
+  function findPinnedMainline(): Set<string> {
+    const head = commits
+      .map((commit, index) => ({ commit, index, priority: mainlinePriority.get(commit.changeId) ?? 0 }))
+      .filter(candidate => candidate.priority > 0)
+      .sort((a, b) => {
+        const priorityDiff = b.priority - a.priority;
+        if (priorityDiff !== 0) return priorityDiff;
+        return a.index - b.index;
+      })[0]?.commit;
+
+    const pinned = new Set<string>();
+    let current: Commit | undefined = head;
+    while (current && !pinned.has(current.changeId)) {
+      pinned.add(current.changeId);
+      const primaryParent = current.parents[0];
+      current = primaryParent ? commitByChange.get(getStableId(primaryParent)) : undefined;
+    }
+    return pinned;
+  }
+
+  const pinnedMainline = findPinnedMainline();
+
   const forkParents = Array.from(primaryChildrenMap.entries())
     .filter(([, children]) => children.length > 1)
     .map(([parent]) => parent);
@@ -144,6 +178,8 @@ function calculateLayout(commits: Commit[]): Commit[] {
 
   const sortPrimaryChildren = (children: string[]) => {
     return [...children].sort((a, b) => {
+      const pinnedDiff = Number(pinnedMainline.has(b)) - Number(pinnedMainline.has(a));
+      if (pinnedDiff !== 0) return pinnedDiff;
       const sDiff = (scores.get(b) || 0) - (scores.get(a) || 0);
       if (sDiff !== 0) return sDiff;
       return (changeToIndex.get(a) || 0) - (changeToIndex.get(b) || 0);
@@ -167,7 +203,8 @@ function calculateLayout(commits: Commit[]): Commit[] {
       const myId = commit.changeId;
 
       if (!assignedColumns.has(myId)) {
-        const col = getNextFreeCol(0);
+        const col = pinnedMainline.has(myId) ? 0 : getNextFreeCol(0);
+        if (pinnedMainline.has(myId)) globallyOccupied.add(0);
         assignedColumns.set(myId, col);
       }
 
@@ -177,10 +214,17 @@ function calculateLayout(commits: Commit[]): Commit[] {
       if (primaryChildren.length > 0) {
         const orderedChildren = overrides.get(myId) || sortPrimaryChildren(primaryChildren);
 
-        assignedColumns.set(orderedChildren[0], myCol);
+        const pinnedChild = orderedChildren.find(childId => pinnedMainline.has(myId) && pinnedMainline.has(childId));
+        if (pinnedChild) {
+          assignedColumns.set(pinnedChild, myCol);
+        }
 
-        for (let k = 1; k < orderedChildren.length; k++) {
+        const firstChild = pinnedChild ?? orderedChildren[0];
+        assignedColumns.set(firstChild, myCol);
+
+        for (let k = 0; k < orderedChildren.length; k++) {
           const cid = orderedChildren[k];
+          if (cid === firstChild) continue;
           const newCol = getNextFreeCol(myCol + 1);
           assignedColumns.set(cid, newCol);
         }
@@ -243,21 +287,35 @@ function calculateLayout(commits: Commit[]): Commit[] {
     return x1 + ((x2 - x1) * (y - y1)) / (y2 - y1);
   }
 
-  function layoutCost(columns: Map<string, number>): number {
+  function layoutCost(columns: Map<string, number>, overrides: Map<string, string[]>): number {
     let horizontalDistance = 0;
     let pinPenalty = 0;
+    let mainlineContinuityPenalty = 0;
+    let orderDeviation = 0;
+
+    for (const [parentId, order] of overrides) {
+      const stableOrder = sortPrimaryChildren(primaryChildrenMap.get(parentId) || []);
+      for (let i = 0; i < order.length; i++) {
+        orderDeviation += Math.abs(i - stableOrder.indexOf(order[i]));
+      }
+    }
+
     for (let i = 0; i < commits.length; i++) {
       const commit = commits[i];
       const commitColumn = columns.get(commit.changeId) ?? 0;
-      if ((scores.get(commit.changeId) || 0) >= 500 && commitColumn !== 0) {
+      if (pinnedMainline.has(commit.changeId) && commitColumn !== 0) {
         pinPenalty += 100000;
       }
       for (const parentId of commit.parents) {
         const parentChangeId = getStableId(parentId);
-        horizontalDistance += Math.abs(commitColumn - (columns.get(parentChangeId) ?? 0));
+        const parentColumn = columns.get(parentChangeId) ?? 0;
+        horizontalDistance += Math.abs(commitColumn - parentColumn);
+        if (pinnedMainline.has(commit.changeId) && pinnedMainline.has(parentChangeId) && commitColumn !== parentColumn) {
+          mainlineContinuityPenalty += 1;
+        }
       }
     }
-    return pinPenalty + countEdgeCrossings(columns) * 1000 + horizontalDistance * 10;
+    return pinPenalty + mainlineContinuityPenalty * 10000 + countEdgeCrossings(columns) * 1000 + horizontalDistance * 10 + orderDeviation;
   }
 
   function candidateOrders(children: string[]): string[][] {
@@ -287,12 +345,12 @@ function calculateLayout(commits: Commit[]): Commit[] {
   for (const parentId of forkParents) {
     const children = primaryChildrenMap.get(parentId) || [];
     let bestOrder = sortPrimaryChildren(children);
-    let bestCost = layoutCost(assignColumns(childOrderOverrides));
+    let bestCost = layoutCost(assignColumns(childOrderOverrides), childOrderOverrides);
 
     for (const order of candidateOrders(children)) {
       const candidateOverrides = new Map(childOrderOverrides);
       candidateOverrides.set(parentId, order);
-      const candidateCost = layoutCost(assignColumns(candidateOverrides));
+      const candidateCost = layoutCost(assignColumns(candidateOverrides), candidateOverrides);
       if (candidateCost < bestCost) {
         bestCost = candidateCost;
         bestOrder = order;

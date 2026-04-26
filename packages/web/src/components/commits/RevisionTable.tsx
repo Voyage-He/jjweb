@@ -28,6 +28,34 @@ interface RevisionTableProps {
 const VIRTUAL_BUFFER = 10; // Extra rows to render above and below viewport
 export const CURVE_SPREAD_FACTOR = 0.3;
 const MAX_CURVE_SPREAD_FACTOR = 0.5;
+const MAX_EDGE_OFFSET = 5;
+const BUS_ROUTE_ROW_THRESHOLD = 1;
+
+interface CommitLineRouteOptions {
+  parentIndex?: number;
+  parentCount?: number;
+}
+
+interface GraphEdge {
+  key: string;
+  childId: string;
+  parentId: string;
+  parentIndex: number;
+  parentCount: number;
+  isMergeEdge: boolean;
+  isCrossColumn: boolean;
+  pathData: string;
+}
+
+interface GraphHighlight {
+  activeId: string | null;
+  relatedCommitIds: Set<string>;
+  relatedEdgeKeys: Set<string>;
+}
+
+function formatSvgNumber(value: number): number {
+  return Number(value.toFixed(3));
+}
 
 export function calculateCommitLinePath(
   childColumn: number,
@@ -35,33 +63,84 @@ export function calculateCommitLinePath(
   parentColumn: number,
   parentRow: number,
   options: { rowHeight: number; trackWidth: number },
-  spreadFactor = CURVE_SPREAD_FACTOR
+  spreadFactor = CURVE_SPREAD_FACTOR,
+  routeOptions: CommitLineRouteOptions = {}
 ): string {
   const { rowHeight, trackWidth } = options;
-  const childX = childColumn * trackWidth + trackWidth / 2;
+  const parentCount = routeOptions.parentCount ?? 1;
+  const parentIndex = routeOptions.parentIndex ?? 0;
+  const isCrossColumn = childColumn !== parentColumn;
+  const edgeOffset = isCrossColumn && parentCount > 1
+    ? (parentIndex - (parentCount - 1) / 2) * Math.min(trackWidth * 0.16, MAX_EDGE_OFFSET)
+    : 0;
+  const childX = childColumn * trackWidth + trackWidth / 2 + edgeOffset;
   const childY = childRow * rowHeight + rowHeight / 2;
   const parentX = parentColumn * trackWidth + trackWidth / 2;
   const parentY = parentRow * rowHeight + rowHeight / 2;
 
-  if (childColumn === parentColumn) {
-    return `M ${childX} ${childY} L ${parentX} ${parentY}`;
+  if (!isCrossColumn) {
+    return `M ${formatSvgNumber(childX)} ${formatSvgNumber(childY)} L ${formatSvgNumber(parentX)} ${formatSvgNumber(parentY)}`;
   }
 
-  const direction = childX > parentX ? 1 : -1;
+  const rowSpan = Math.abs(parentRow - childRow);
+  const columnSpan = Math.abs(parentColumn - childColumn);
+  if (columnSpan > 1 && rowSpan > BUS_ROUTE_ROW_THRESHOLD) {
+    const directionY = parentY >= childY ? 1 : -1;
+    const parentApproachY = parentY - directionY * rowHeight * 0.35;
+    const parentOffsetY = parentCount > 1
+      ? (parentIndex - (parentCount - 1) / 2) * Math.min(rowHeight * 0.08, 4)
+      : 0;
+    const busY = parentApproachY + parentOffsetY;
+
+    return [
+      `M ${formatSvgNumber(childX)} ${formatSvgNumber(childY)}`,
+      `L ${formatSvgNumber(childX)} ${formatSvgNumber(busY)}`,
+      `L ${formatSvgNumber(parentX)} ${formatSvgNumber(busY)}`,
+      `L ${formatSvgNumber(parentX)} ${formatSvgNumber(parentY)}`,
+    ].join(' ');
+  }
+
+  const direction = childX >= parentX ? 1 : -1;
   const spread = trackWidth * Math.min(Math.max(spreadFactor, 0), MAX_CURVE_SPREAD_FACTOR);
   const cp1x = childX;
-  const cp2x = parentX + direction * spread;
+  const cp2x = parentX + direction * spread + edgeOffset;
   const cp1y = childY + (parentY - childY) / 2;
   const cp2y = childY + (parentY - childY) / 2;
 
-  return `M ${childX} ${childY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${parentX} ${parentY}`;
+  return `M ${formatSvgNumber(childX)} ${formatSvgNumber(childY)} C ${formatSvgNumber(cp1x)} ${formatSvgNumber(cp1y)}, ${formatSvgNumber(cp2x)} ${formatSvgNumber(cp2y)}, ${formatSvgNumber(parentX)} ${formatSvgNumber(parentY)}`;
+}
+
+function getGraphHighlight(commits: Commit[], activeId: string | null): GraphHighlight {
+  const relatedCommitIds = new Set<string>();
+  const relatedEdgeKeys = new Set<string>();
+  if (!activeId) return { activeId, relatedCommitIds, relatedEdgeKeys };
+
+  const activeCommit = commits.find(commit => commit.id === activeId);
+  if (!activeCommit) return { activeId: null, relatedCommitIds, relatedEdgeKeys };
+
+  relatedCommitIds.add(activeCommit.id);
+  activeCommit.parents.forEach((parentId) => {
+    relatedCommitIds.add(parentId);
+    relatedEdgeKeys.add(`${activeCommit.id}-${parentId}`);
+  });
+
+  commits.forEach((commit) => {
+    if (commit.parents.includes(activeCommit.id)) {
+      relatedCommitIds.add(commit.id);
+      relatedEdgeKeys.add(`${commit.id}-${activeCommit.id}`);
+    }
+  });
+
+  return { activeId, relatedCommitIds, relatedEdgeKeys };
 }
 
 const CommitLines: React.FC<{
   commits: Commit[];
   metrics: { maxCol: number; maxRow: number };
   options: { rowHeight: number; trackWidth: number };
-}> = ({ commits, metrics, options }) => {
+  highlight: GraphHighlight;
+  onCommitHover: (commitId: string | null) => void;
+}> = ({ commits, metrics, options, highlight, onCommitHover }) => {
   const { rowHeight, trackWidth } = options;
   const commitMap = useMemo(() => {
     const map = new Map<string, Commit>();
@@ -69,8 +148,9 @@ const CommitLines: React.FC<{
     return map;
   }, [commits]);
 
-  const paths = useMemo(() => {
-    const p: React.ReactNode[] = [];
+  const { edges, dots } = useMemo(() => {
+    const edges: GraphEdge[] = [];
+    const dots: Array<{ id: string; x: number; y: number }> = [];
     commits.forEach((child) => {
       if (child.row === undefined || child.column === undefined) return;
 
@@ -79,7 +159,7 @@ const CommitLines: React.FC<{
       const childX = childColumn * trackWidth + trackWidth / 2;
       const childY = childRow * rowHeight + rowHeight / 2;
 
-      child.parents.forEach((parentId) => {
+      child.parents.forEach((parentId, parentIndex) => {
         const parent = commitMap.get(parentId);
         if (!parent || parent.row === undefined || parent.column === undefined) return;
 
@@ -88,44 +168,79 @@ const CommitLines: React.FC<{
           childRow,
           parent.column,
           parent.row,
-          { rowHeight, trackWidth }
+          { rowHeight, trackWidth },
+          CURVE_SPREAD_FACTOR,
+          { parentIndex, parentCount: child.parents.length }
         );
 
-        p.push(
-          <path
-            key={`${child.id}-${parent.id}`}
-            d={pathData}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            className="text-gray-400 dark:text-gray-500 opacity-60 transition-opacity hover:opacity-100"
-          />
-        );
+        edges.push({
+          key: `${child.id}-${parent.id}`,
+          childId: child.id,
+          parentId: parent.id,
+          parentIndex,
+          parentCount: child.parents.length,
+          isMergeEdge: child.parents.length > 1 && parentIndex > 0,
+          isCrossColumn: childColumn !== parent.column,
+          pathData,
+        });
       });
 
-      // Draw a dot at the revision's own position
-      p.push(
-        <circle
-          key={`${child.id}-dot`}
-          cx={childX}
-          cy={childY}
-          r={5}
-          fill="currentColor"
-          className="text-gray-400 dark:text-gray-500"
-        />
-      );
+      dots.push({ id: child.id, x: childX, y: childY });
     });
-    return p;
+    return { edges, dots };
   }, [commits, commitMap, rowHeight, trackWidth]);
+
+  const hasHighlight = Boolean(highlight.activeId);
 
   return (
     <svg
-      className="absolute top-0 left-0 pointer-events-none"
+      className="absolute top-0 left-0"
       width={(metrics.maxCol + 1) * trackWidth}
       height={(metrics.maxRow + 1) * rowHeight}
       style={{ zIndex: 5 }}
+      data-testid="revision-graph"
     >
-      {paths}
+      {edges.map((edge) => {
+        const isRelated = highlight.relatedEdgeKeys.has(edge.key);
+        return (
+          <path
+            key={edge.key}
+            data-testid={`revision-graph-edge-${edge.childId}-${edge.parentId}`}
+            d={edge.pathData}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={isRelated ? 3 : 2}
+            className={cn(
+              'pointer-events-none transition-opacity',
+              edge.isMergeEdge
+                ? 'text-gray-500 dark:text-gray-400 opacity-45'
+                : edge.isCrossColumn
+                  ? 'text-gray-500 dark:text-gray-400 opacity-65'
+                  : 'text-gray-400 dark:text-gray-500 opacity-70',
+              hasHighlight && (isRelated ? 'opacity-100' : 'opacity-20')
+            )}
+          />
+        );
+      })}
+      {dots.map((dot) => {
+        const isRelated = highlight.relatedCommitIds.has(dot.id);
+        return (
+          <circle
+            key={`${dot.id}-dot`}
+            data-testid={`revision-graph-node-${dot.id}`}
+            cx={dot.x}
+            cy={dot.y}
+            r={isRelated ? 6 : 5}
+            fill="currentColor"
+            onMouseEnter={() => onCommitHover(dot.id)}
+            onMouseLeave={() => onCommitHover(null)}
+            className={cn(
+              'pointer-events-auto text-gray-400 dark:text-gray-500 transition-opacity cursor-pointer',
+              hasHighlight && (isRelated ? 'opacity-100' : 'opacity-25')
+            )}
+          />
+        );
+      })}
     </svg>
   );
 };
@@ -147,6 +262,7 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 });
   const [scrollLeft, setScrollLeft] = useState(0);
+  const [hoveredCommitId, setHoveredCommitId] = useState<string | null>(null);
 
   // Update visible range on scroll
   useEffect(() => {
@@ -217,6 +333,11 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
     );
   }, [commits, visibleRange]);
 
+  const graphHighlight = useMemo(
+    () => getGraphHighlight(commits, hoveredCommitId ?? selectedCommit?.id ?? null),
+    [commits, hoveredCommitId, selectedCommit?.id]
+  );
+
   return (
     <div data-testid="revision-table" className="flex flex-col h-full w-full bg-white dark:bg-gray-950">
       {/* Column header row - fixed at top */}
@@ -249,6 +370,8 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
             commits={commits}
             metrics={metrics}
             options={gridLayoutOptions}
+            highlight={graphHighlight}
+            onCommitHover={setHoveredCommitId}
           />
 
           <div style={gridStyle}>
@@ -262,6 +385,8 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
                   <div
                     onClick={() => onCommitSelect(commit)}
                     onDoubleClick={() => onCommitEdit?.(commit)}
+                    onMouseEnter={() => setHoveredCommitId(commit.id)}
+                    onMouseLeave={() => setHoveredCommitId(null)}
                     style={{
                       gridRow: row,
                       gridColumn: '1 / -1',
@@ -295,7 +420,11 @@ export const RevisionTable: React.FC<RevisionTableProps> = ({
                       onSplit={onSplit}
                       onCreateBookmark={onCreateBookmark}
                     >
-                      <div className="w-full h-full pointer-events-auto">
+                      <div
+                        className="w-full h-full pointer-events-auto"
+                        onMouseEnter={() => setHoveredCommitId(commit.id)}
+                        onMouseLeave={() => setHoveredCommitId(null)}
+                      >
                         <RevisionInfo
                           commit={commit}
                           isSelected={isSelected}
