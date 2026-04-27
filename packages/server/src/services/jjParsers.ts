@@ -107,6 +107,7 @@ function calculateLayout(commits: Commit[]): Commit[] {
 
   const scores = new Map<string, number>();
   const primaryChildrenMap = new Map<string, string[]>();
+  const secondaryChildrenMap = new Map<string, string[]>();
   const mainlinePriority = new Map<string, number>();
 
   function getCommitMainlinePriority(commit: Commit): number {
@@ -136,6 +137,11 @@ function calculateLayout(commits: Commit[]): Commit[] {
       const primaryParentId = getStableId(commit.parents[0]);
       if (!primaryChildrenMap.has(primaryParentId)) primaryChildrenMap.set(primaryParentId, []);
       primaryChildrenMap.get(primaryParentId)!.push(myId);
+
+      for (const parentId of commit.parents.slice(1).map(getStableId)) {
+        if (!secondaryChildrenMap.has(parentId)) secondaryChildrenMap.set(parentId, []);
+        secondaryChildrenMap.get(parentId)!.push(myId);
+      }
     }
   }
 
@@ -186,14 +192,74 @@ function calculateLayout(commits: Commit[]): Commit[] {
     });
   };
 
+  interface RowInterval {
+    start: number;
+    end: number;
+  }
+
+  interface LayoutCost {
+    pinPenalty: number;
+    mainlineContinuityPenalty: number;
+    columnCount: number;
+    crossings: number;
+    horizontalDistance: number;
+    orderDeviation: number;
+  }
+
   function assignColumns(overrides: Map<string, string[]>): Map<string, number> {
     const assignedColumns = new Map<string, number>();
-    const globallyOccupied = new Set<number>();
+    const laneReservations = new Map<number, RowInterval[]>();
 
-    function getNextFreeCol(startCol: number): number {
+    function rowFor(changeId: string, fallback = 0): number {
+      return changeToIndex.get(changeId) ?? fallback;
+    }
+
+    function nodeInterval(changeId: string): RowInterval {
+      const row = rowFor(changeId);
+      return { start: row, end: row + 1 };
+    }
+
+    function edgeInterval(childId: string, parentId: string): RowInterval {
+      const childRow = rowFor(childId);
+      const parentRow = rowFor(parentId, commits.length);
+      return {
+        start: Math.min(childRow, parentRow),
+        end: Math.max(childRow, parentRow),
+      };
+    }
+
+    function initialInterval(commit: Commit): RowInterval {
+      const primaryParentId = commit.parents[0] ? getStableId(commit.parents[0]) : undefined;
+      return primaryParentId ? edgeInterval(commit.changeId, primaryParentId) : nodeInterval(commit.changeId);
+    }
+
+    function intervalsOverlap(a: RowInterval, b: RowInterval): boolean {
+      return a.start < b.end && b.start < a.end;
+    }
+
+    function reserveLane(col: number, interval: RowInterval): void {
+      if (interval.end <= interval.start) return;
+      const reservations = laneReservations.get(col) ?? [];
+      reservations.push(interval);
+      laneReservations.set(col, reservations);
+    }
+
+    function reservePrimaryEdge(childId: string, parentId: string, col: number): void {
+      reserveLane(col, edgeInterval(childId, parentId));
+    }
+
+    function reserveParentEdge(childId: string, parentId: string, col: number): void {
+      reserveLane(col, edgeInterval(childId, parentId));
+    }
+
+    function laneIsFree(col: number, interval: RowInterval): boolean {
+      return !(laneReservations.get(col) ?? []).some(reservation => intervalsOverlap(reservation, interval));
+    }
+
+    function allocateLane(interval: RowInterval, startCol: number): number {
       let col = startCol;
-      while (globallyOccupied.has(col)) col++;
-      globallyOccupied.add(col);
+      while (!laneIsFree(col, interval)) col++;
+      reserveLane(col, interval);
       return col;
     }
 
@@ -203,12 +269,21 @@ function calculateLayout(commits: Commit[]): Commit[] {
       const myId = commit.changeId;
 
       if (!assignedColumns.has(myId)) {
-        const col = pinnedMainline.has(myId) ? 0 : getNextFreeCol(0);
-        if (pinnedMainline.has(myId)) globallyOccupied.add(0);
+        const interval = initialInterval(commit);
+        const col = pinnedMainline.has(myId)
+          ? 0
+          : allocateLane(interval, pinnedMainline.size > 0 ? 1 : 0);
         assignedColumns.set(myId, col);
+        if (pinnedMainline.has(myId)) {
+          reserveLane(col, interval);
+        }
       }
 
       const myCol = assignedColumns.get(myId)!;
+      for (const secondaryChildId of secondaryChildrenMap.get(myId) ?? []) {
+        reserveParentEdge(secondaryChildId, myId, myCol);
+      }
+
       const primaryChildren = primaryChildrenMap.get(myId) || [];
 
       if (primaryChildren.length > 0) {
@@ -217,15 +292,19 @@ function calculateLayout(commits: Commit[]): Commit[] {
         const pinnedChild = orderedChildren.find(childId => pinnedMainline.has(myId) && pinnedMainline.has(childId));
         if (pinnedChild) {
           assignedColumns.set(pinnedChild, myCol);
+          reservePrimaryEdge(pinnedChild, myId, myCol);
         }
 
         const firstChild = pinnedChild ?? orderedChildren[0];
         assignedColumns.set(firstChild, myCol);
+        if (firstChild !== pinnedChild) {
+          reservePrimaryEdge(firstChild, myId, myCol);
+        }
 
         for (let k = 0; k < orderedChildren.length; k++) {
           const cid = orderedChildren[k];
           if (cid === firstChild) continue;
-          const newCol = getNextFreeCol(myCol + 1);
+          const newCol = allocateLane(edgeInterval(cid, myId), myCol + 1);
           assignedColumns.set(cid, newCol);
         }
       }
@@ -287,7 +366,12 @@ function calculateLayout(commits: Commit[]): Commit[] {
     return x1 + ((x2 - x1) * (y - y1)) / (y2 - y1);
   }
 
-  function layoutCost(columns: Map<string, number>, overrides: Map<string, string[]>): number {
+  function columnCount(columns: Map<string, number>): number {
+    if (columns.size === 0) return 0;
+    return Math.max(...columns.values()) + 1;
+  }
+
+  function layoutCost(columns: Map<string, number>, overrides: Map<string, string[]>): LayoutCost {
     let horizontalDistance = 0;
     let pinPenalty = 0;
     let mainlineContinuityPenalty = 0;
@@ -315,7 +399,31 @@ function calculateLayout(commits: Commit[]): Commit[] {
         }
       }
     }
-    return pinPenalty + mainlineContinuityPenalty * 10000 + countEdgeCrossings(columns) * 1000 + horizontalDistance * 10 + orderDeviation;
+    return {
+      pinPenalty,
+      mainlineContinuityPenalty,
+      columnCount: columnCount(columns),
+      crossings: countEdgeCrossings(columns),
+      horizontalDistance,
+      orderDeviation,
+    };
+  }
+
+  function compareLayoutCost(a: LayoutCost, b: LayoutCost): number {
+    const keys: Array<keyof LayoutCost> = [
+      'pinPenalty',
+      'mainlineContinuityPenalty',
+      'columnCount',
+      'crossings',
+      'horizontalDistance',
+      'orderDeviation',
+    ];
+
+    for (const key of keys) {
+      const diff = a[key] - b[key];
+      if (diff !== 0) return diff;
+    }
+    return 0;
   }
 
   function candidateOrders(children: string[]): string[][] {
@@ -351,7 +459,7 @@ function calculateLayout(commits: Commit[]): Commit[] {
       const candidateOverrides = new Map(childOrderOverrides);
       candidateOverrides.set(parentId, order);
       const candidateCost = layoutCost(assignColumns(candidateOverrides), candidateOverrides);
-      if (candidateCost < bestCost) {
+      if (compareLayoutCost(candidateCost, bestCost) < 0) {
         bestCost = candidateCost;
         bestOrder = order;
       }
@@ -360,7 +468,13 @@ function calculateLayout(commits: Commit[]): Commit[] {
     childOrderOverrides.set(parentId, bestOrder);
   }
 
-  const assignedColumns = assignColumns(childOrderOverrides);
+  function normalizeColumns(columns: Map<string, number>): Map<string, number> {
+    const usedColumns = [...new Set(columns.values())].sort((a, b) => a - b);
+    const normalizedByColumn = new Map(usedColumns.map((col, index) => [col, index]));
+    return new Map([...columns].map(([changeId, col]) => [changeId, normalizedByColumn.get(col) ?? col]));
+  }
+
+  const assignedColumns = normalizeColumns(assignColumns(childOrderOverrides));
 
   for (let i = 0; i < commits.length; i++) {
     commits[i].row = i;

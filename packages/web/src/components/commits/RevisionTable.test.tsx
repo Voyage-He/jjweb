@@ -254,6 +254,36 @@ describe('RevisionTable', () => {
     expect(svgClass('revision-graph-edge-merge-parent-2')).toContain('opacity-45');
   });
 
+  it('sizes the graph from the compact maximum column', () => {
+    const main = makeCommit({
+      id: 'main',
+      changeId: 'main-change',
+      parents: ['base'],
+      description: 'Main',
+      row: 0,
+      column: 0,
+    });
+    const side = makeCommit({
+      id: 'side',
+      changeId: 'side-change',
+      parents: ['base'],
+      description: 'Side',
+      row: 1,
+      column: 1,
+    });
+    const base = makeCommit({
+      id: 'base',
+      changeId: 'base-change',
+      description: 'Base',
+      row: 2,
+      column: 0,
+    });
+
+    renderRevisionTable([main, side, base]);
+
+    expect(screen.getByTestId('revision-graph')).toHaveAttribute('width', '64');
+  });
+
   it('keeps selected revision relationships highlighted', () => {
     const child = makeCommit({
       id: 'child',

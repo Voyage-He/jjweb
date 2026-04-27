@@ -30,6 +30,8 @@ const commitLine = (commit: Record<string, unknown>, bookmarks: string[] = []) =
 
 const findCommit = (commits: Commit[], id: string) => commits.find((commit: Commit) => commit.id === id);
 
+const maxColumn = (commits: Commit[]) => Math.max(...commits.map(commit => commit.column ?? 0));
+
 const countCommitLineCrossings = (commits: Commit[]) => {
   const commitMap = new Map(commits.map(commit => [commit.id, commit]));
   const edges = commits.flatMap((commit) => {
@@ -374,6 +376,322 @@ describe('JJ Parsers', () => {
       expect(findCommit(commits, 'SIDE')?.column).toBe(1);
     });
 
+    it('should reuse a side column for non-overlapping short branches', async () => {
+      const mainTip = makeLogCommit({
+        change_id: 'main-tip',
+        commit_id: 'MAIN_TIP',
+        parents: ['MAIN_BASE'],
+        description: 'Main tip',
+      });
+      const newerSide = makeLogCommit({
+        change_id: 'newer-side',
+        commit_id: 'NEWER_SIDE',
+        parents: ['MAIN_BASE'],
+        description: 'Newer short side branch',
+      });
+      const mainBase = makeLogCommit({
+        change_id: 'main-base',
+        commit_id: 'MAIN_BASE',
+        parents: ['BASE'],
+        description: 'Main base',
+      });
+      const olderSide = makeLogCommit({
+        change_id: 'older-side',
+        commit_id: 'OLDER_SIDE',
+        parents: ['BASE'],
+        description: 'Older short side branch',
+      });
+      const base = makeLogCommit({
+        change_id: 'base',
+        commit_id: 'BASE',
+        description: 'Base',
+      });
+
+      vi.mocked(jjExecutor.execute).mockResolvedValue({
+        stdout: [
+          commitLine(mainTip, ['main']),
+          commitLine(newerSide),
+          commitLine(mainBase),
+          commitLine(olderSide),
+          commitLine(base),
+        ].join('\n') + '\n',
+        stderr: '', exitCode: 0, success: true,
+      });
+
+      const commits = await parseLog('/test/repo');
+      expect(findCommit(commits, 'MAIN_TIP')?.column).toBe(0);
+      expect(findCommit(commits, 'MAIN_BASE')?.column).toBe(0);
+      expect(findCommit(commits, 'BASE')?.column).toBe(0);
+      expect(findCommit(commits, 'OLDER_SIDE')?.column).toBe(1);
+      expect(findCommit(commits, 'NEWER_SIDE')?.column).toBe(1);
+      expect(maxColumn(commits)).toBe(1);
+    });
+
+    it('should release a merged side branch column for later branches', async () => {
+      const mainHead = makeLogCommit({
+        change_id: 'main-head',
+        commit_id: 'MAIN_HEAD',
+        parents: ['AFTER_MERGE'],
+        description: 'Main head',
+      });
+      const laterSide = makeLogCommit({
+        change_id: 'later-side',
+        commit_id: 'LATER_SIDE',
+        parents: ['AFTER_MERGE'],
+        description: 'Later side branch',
+      });
+      const afterMerge = makeLogCommit({
+        change_id: 'after-merge',
+        commit_id: 'AFTER_MERGE',
+        parents: ['MERGE'],
+        description: 'Main after merge',
+      });
+      const merge = makeLogCommit({
+        change_id: 'merge',
+        commit_id: 'MERGE',
+        parents: ['MAIN_BEFORE', 'SIDE'],
+        description: 'Merge side into main',
+      });
+      const mainBefore = makeLogCommit({
+        change_id: 'main-before',
+        commit_id: 'MAIN_BEFORE',
+        parents: ['BASE'],
+        description: 'Main before merge',
+      });
+      const side = makeLogCommit({
+        change_id: 'side',
+        commit_id: 'SIDE',
+        parents: ['BASE'],
+        description: 'Merged side branch',
+      });
+      const base = makeLogCommit({
+        change_id: 'base',
+        commit_id: 'BASE',
+        description: 'Base',
+      });
+
+      vi.mocked(jjExecutor.execute).mockResolvedValue({
+        stdout: [
+          commitLine(mainHead, ['main']),
+          commitLine(laterSide),
+          commitLine(afterMerge),
+          commitLine(merge),
+          commitLine(mainBefore),
+          commitLine(side),
+          commitLine(base),
+        ].join('\n') + '\n',
+        stderr: '', exitCode: 0, success: true,
+      });
+
+      const commits = await parseLog('/test/repo');
+      expect(findCommit(commits, 'MAIN_HEAD')?.column).toBe(0);
+      expect(findCommit(commits, 'AFTER_MERGE')?.column).toBe(0);
+      expect(findCommit(commits, 'MERGE')?.column).toBe(0);
+      expect(findCommit(commits, 'MAIN_BEFORE')?.column).toBe(0);
+      expect(findCommit(commits, 'BASE')?.column).toBe(0);
+      expect(findCommit(commits, 'SIDE')?.column).toBe(1);
+      expect(findCommit(commits, 'LATER_SIDE')?.column).toBe(1);
+      expect(maxColumn(commits)).toBe(1);
+    });
+
+    it('should keep a merge parent lane occupied until the merge edge ends', async () => {
+      const mainHead = makeLogCommit({
+        change_id: 'main-head',
+        commit_id: 'MAIN_HEAD',
+        parents: ['AFTER_MERGE'],
+        description: 'Main head',
+      });
+      const laterSide = makeLogCommit({
+        change_id: 'later-side',
+        commit_id: 'LATER_SIDE',
+        parents: ['AFTER_MERGE'],
+        description: 'Later side branch',
+      });
+      const afterMerge = makeLogCommit({
+        change_id: 'after-merge',
+        commit_id: 'AFTER_MERGE',
+        parents: ['MERGE'],
+        description: 'Main after merge',
+      });
+      const merge = makeLogCommit({
+        change_id: 'merge',
+        commit_id: 'MERGE',
+        parents: ['MAIN_BEFORE', 'SIDE'],
+        description: 'Merge side into main',
+      });
+      const blockedSide = makeLogCommit({
+        change_id: 'blocked-side',
+        commit_id: 'BLOCKED_SIDE',
+        parents: ['MAIN_BEFORE'],
+        description: 'Side branch while merge edge is active',
+      });
+      const mainBefore = makeLogCommit({
+        change_id: 'main-before',
+        commit_id: 'MAIN_BEFORE',
+        parents: ['BASE'],
+        description: 'Main before merge',
+      });
+      const side = makeLogCommit({
+        change_id: 'side',
+        commit_id: 'SIDE',
+        parents: ['BASE'],
+        description: 'Merged side branch',
+      });
+      const base = makeLogCommit({
+        change_id: 'base',
+        commit_id: 'BASE',
+        description: 'Base',
+      });
+
+      vi.mocked(jjExecutor.execute).mockResolvedValue({
+        stdout: [
+          commitLine(mainHead, ['main']),
+          commitLine(laterSide),
+          commitLine(afterMerge),
+          commitLine(merge),
+          commitLine(blockedSide),
+          commitLine(mainBefore),
+          commitLine(side),
+          commitLine(base),
+        ].join('\n') + '\n',
+        stderr: '', exitCode: 0, success: true,
+      });
+
+      const commits = await parseLog('/test/repo');
+      expect(findCommit(commits, 'SIDE')?.column).toBe(1);
+      expect(findCommit(commits, 'LATER_SIDE')?.column).toBe(1);
+      expect(findCommit(commits, 'BLOCKED_SIDE')?.column).toBe(2);
+      expect(maxColumn(commits)).toBe(2);
+    });
+
+    it('should keep the working copy pinned while reusing released side columns', async () => {
+      const workingCopy = makeLogCommit({
+        change_id: 'wc',
+        commit_id: 'WC',
+        parents: ['MAIN_TIP'],
+        description: 'Working copy',
+        working_copy: true,
+      });
+      const mainTip = makeLogCommit({
+        change_id: 'main-tip',
+        commit_id: 'MAIN_TIP',
+        parents: ['MAIN_BASE'],
+        description: 'Main tip',
+      });
+      const olderSide = makeLogCommit({
+        change_id: 'older-side',
+        commit_id: 'OLDER_SIDE',
+        parents: ['BASE'],
+        description: 'Older side branch',
+      });
+      const mainBase = makeLogCommit({
+        change_id: 'main-base',
+        commit_id: 'MAIN_BASE',
+        parents: ['BASE'],
+        description: 'Main base',
+      });
+      const base = makeLogCommit({
+        change_id: 'base',
+        commit_id: 'BASE',
+        description: 'Base',
+      });
+
+      vi.mocked(jjExecutor.execute).mockResolvedValue({
+        stdout: [
+          commitLine(workingCopy),
+          commitLine(mainTip, ['main']),
+          commitLine(olderSide),
+          commitLine(mainBase),
+          commitLine(base),
+        ].join('\n') + '\n',
+        stderr: '', exitCode: 0, success: true,
+      });
+
+      const commits = await parseLog('/test/repo');
+      expect(findCommit(commits, 'WC')?.column).toBe(0);
+      expect(findCommit(commits, 'MAIN_TIP')?.column).toBe(0);
+      expect(findCommit(commits, 'MAIN_BASE')?.column).toBe(0);
+      expect(findCommit(commits, 'BASE')?.column).toBe(0);
+      expect(findCommit(commits, 'OLDER_SIDE')?.column).toBe(1);
+      expect(maxColumn(commits)).toBe(1);
+    });
+
+    it('should keep a compact graph for working copy, fork, merge, and short branch history', async () => {
+      const workingCopy = makeLogCommit({
+        change_id: 'wc',
+        commit_id: 'WC',
+        parents: ['MAIN_HEAD'],
+        description: 'Working copy',
+        working_copy: true,
+      });
+      const shortSide = makeLogCommit({
+        change_id: 'short-side',
+        commit_id: 'SHORT_SIDE',
+        parents: ['MAIN_HEAD'],
+        description: 'Short side branch after merge',
+      });
+      const mainHead = makeLogCommit({
+        change_id: 'main-head',
+        commit_id: 'MAIN_HEAD',
+        parents: ['AFTER_MERGE'],
+        description: 'Main head',
+      });
+      const afterMerge = makeLogCommit({
+        change_id: 'after-merge',
+        commit_id: 'AFTER_MERGE',
+        parents: ['MERGE'],
+        description: 'Main after merge',
+      });
+      const merge = makeLogCommit({
+        change_id: 'merge',
+        commit_id: 'MERGE',
+        parents: ['MAIN_BEFORE', 'SIDE'],
+        description: 'Merge side into main',
+      });
+      const mainBefore = makeLogCommit({
+        change_id: 'main-before',
+        commit_id: 'MAIN_BEFORE',
+        parents: ['BASE'],
+        description: 'Main before merge',
+      });
+      const side = makeLogCommit({
+        change_id: 'side',
+        commit_id: 'SIDE',
+        parents: ['BASE'],
+        description: 'Side branch',
+      });
+      const base = makeLogCommit({
+        change_id: 'base',
+        commit_id: 'BASE',
+        description: 'Base',
+      });
+
+      vi.mocked(jjExecutor.execute).mockResolvedValue({
+        stdout: [
+          commitLine(workingCopy),
+          commitLine(shortSide),
+          commitLine(mainHead, ['main']),
+          commitLine(afterMerge),
+          commitLine(merge),
+          commitLine(mainBefore),
+          commitLine(side),
+          commitLine(base),
+        ].join('\n') + '\n',
+        stderr: '', exitCode: 0, success: true,
+      });
+
+      const commits = await parseLog('/test/repo');
+      expect(findCommit(commits, 'WC')?.column).toBe(0);
+      expect(findCommit(commits, 'MAIN_HEAD')?.column).toBe(0);
+      expect(findCommit(commits, 'AFTER_MERGE')?.column).toBe(0);
+      expect(findCommit(commits, 'MERGE')?.column).toBe(0);
+      expect(findCommit(commits, 'MAIN_BEFORE')?.column).toBe(0);
+      expect(findCommit(commits, 'BASE')?.column).toBe(0);
+      expect(findCommit(commits, 'SIDE')?.column).toBe(1);
+      expect(findCommit(commits, 'SHORT_SIDE')?.column).toBe(1);
+      expect(maxColumn(commits)).toBe(1);
+    });
+
     it('should return stable columns for repeated equivalent layouts', async () => {
       const branchA = makeLogCommit({
         change_id: 'a',
@@ -460,6 +778,7 @@ describe('JJ Parsers', () => {
 
       const commits = await parseLog('/test/repo');
       expect(countCommitLineCrossings(commits)).toBe(0);
+      expect(maxColumn(commits)).toBe(2);
       expect(findCommit(commits, 'B')?.column).toBe(0);
       expect(findCommit(commits, 'A')?.column).toBe(1);
       expect(findCommit(commits, 'C')?.column).toBe(2);

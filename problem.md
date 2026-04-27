@@ -19,9 +19,7 @@
 - `packages/web/src/components/commits/CommitDetail.tsx`
 - `packages/server/src/routes/api.ts`
 
-前端会通过 `apiClient.getCommitDetail(changeId)` 请求 `/api/repo/show/:revision`，但服务端目前没有定义对应路由，运行时会返回 404。
-
-需要注意：提交详情面板仍然能显示一部分 revision 信息，因为这些字段来自 `/api/repo/log` 返回的 `Commit` 对象，而不是来自 show 接口。因此实测能看到 change id、作者、时间、描述、parents、bookmarks 等基础信息是合理的。真正缺失的是依赖 `CommitDetailResponse` 的额外详情，尤其是 `files` 文件变更列表；`SplitChangeDialog` 也依赖该请求返回的 `files`。
+前端会通过 `apiClient.getCommitDetail(changeId)` 请求 `/api/repo/show/:revision`，选择提交后也依赖该接口加载提交详情和文件变更列表。但服务端目前没有定义对应路由，运行时会返回 404，导致提交详情视图不可用。
 
 建议修复：
 - 在服务端新增 `GET /api/repo/show/:revision` 路由。
