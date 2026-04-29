@@ -13,7 +13,7 @@ vi.mock('./jjExecutor.js', () => ({
 }));
 
 import { jjExecutor } from './jjExecutor.js';
-import { parseLog, parseStatus, parseDiff, parseBookmarks } from './jjParsers.js';
+import { parseLog, parseStatus, parseDiff, parseBookmarks, parseOperationLog } from './jjParsers.js';
 
 const makeLogCommit = (overrides: Record<string, unknown> = {}) => ({
   change_id: 'change',
@@ -32,22 +32,34 @@ const findCommit = (commits: Commit[], id: string) => commits.find((commit: Comm
 
 const maxColumn = (commits: Commit[]) => Math.max(...commits.map(commit => commit.column ?? 0));
 
+interface TestEdge {
+  childId: string;
+  parentId: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
 const countCommitLineCrossings = (commits: Commit[]) => {
   const commitMap = new Map(commits.map(commit => [commit.id, commit]));
   const edges = commits.flatMap((commit) => {
-    if (commit.row === undefined || commit.column === undefined) return [];
+    const childRow = commit.row;
+    const childColumn = commit.column;
+    if (childRow === undefined || childColumn === undefined) return [];
+
     return commit.parents.map((parentId) => {
       const parent = commitMap.get(parentId);
       if (!parent || parent.row === undefined || parent.column === undefined) return null;
       return {
         childId: commit.id,
         parentId,
-        x1: commit.column,
-        y1: commit.row,
+        x1: childColumn,
+        y1: childRow,
         x2: parent.column,
         y2: parent.row,
       };
-    }).filter(edge => edge !== null);
+    }).filter((edge): edge is TestEdge => edge !== null);
   });
 
   let crossings = 0;
@@ -90,12 +102,14 @@ describe('JJ Parsers', () => {
 
   describe('parseLog', () => {
     it('should parse jj log JSON output', async () => {
+      const authorTimestamp = '2024-01-15 10:30:00 -08:00';
+      const committerTimestamp = '2024-01-15 11:00:00 -08:00';
       const mockOutput = JSON.stringify({
         change_id: 'z1234567890',
         commit_id: 'a1b2c3d4e5f6',
         parents: ['p1a2b3c4d5e6'],
-        author: { name: 'Test Author', email: 'test@example.com', timestamp: '2024-01-15 10:30:00 -08:00' },
-        committer: { name: 'Test Author', email: 'test@example.com', timestamp: '2024-01-15 10:30:00 -08:00' },
+        author: { name: 'Test Author', email: 'test@example.com', timestamp: authorTimestamp },
+        committer: { name: 'Test Author', email: 'test@example.com', timestamp: committerTimestamp },
         description: 'Test commit',
         local_bookmarks: ['main'],
         tags: [],
@@ -117,6 +131,9 @@ describe('JJ Parsers', () => {
       expect(commits[0].description).toBe('Test commit');
       expect(commits[0].bookmarks).toHaveLength(1);
       expect(commits[0].bookmarks[0].name).toBe('main');
+      expect(commits[0].author.timestamp).toBe(new Date(authorTimestamp).getTime());
+      expect(commits[0].committer.timestamp).toBe(new Date(committerTimestamp).getTime());
+      expect(commits[0].timestamp).toBe(new Date(authorTimestamp).getTime());
     });
 
     it('should handle empty repository', async () => {
@@ -817,6 +834,41 @@ describe('JJ Parsers', () => {
       expect(commits[1].column).toBe(1);
       expect(commits[2].id).toBe('C');
       expect(commits[2].column).toBe(0);
+    });
+  });
+
+  describe('parseOperationLog', () => {
+    it('should parse operation timestamps as epoch milliseconds and keep metadata timestamp raw', async () => {
+      const startTimestamp = '2024-01-01 10:00:00 +00:00';
+      const endTimestamp = '2024-01-01 10:00:05 +00:00';
+      const mockOutput = JSON.stringify({
+        id: 'op123',
+        description: 'commit abc123',
+        user: 'Test User',
+        time: {
+          start: startTimestamp,
+          end: endTimestamp,
+          duration: '5s',
+        },
+        current: true,
+        snapshot: false,
+        workspace_name: 'default',
+      });
+
+      vi.mocked(jjExecutor.execute).mockResolvedValue({
+        stdout: mockOutput + '\n',
+        stderr: '',
+        exitCode: 0,
+        success: true,
+      });
+
+      const operations = await parseOperationLog('/test/repo');
+
+      expect(operations).toHaveLength(1);
+      expect(operations[0].time?.start).toBe(new Date(startTimestamp).getTime());
+      expect(operations[0].time?.end).toBe(new Date(endTimestamp).getTime());
+      expect(operations[0].timestamp).toBe(new Date(startTimestamp).getTime());
+      expect(operations[0].metadata.timestamp).toBe(startTimestamp);
     });
   });
 

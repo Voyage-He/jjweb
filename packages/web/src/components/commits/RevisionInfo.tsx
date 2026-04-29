@@ -77,7 +77,7 @@ const AuthorCell: React.FC<{ commit: Commit }> = ({ commit }) => (
 
 const DateCell: React.FC<{ commit: Commit }> = ({ commit }) => {
   const dateStr = commit.author.timestamp
-    ? new Date(commit.author.timestamp * 1000).toLocaleDateString(undefined, {
+    ? new Date(commit.author.timestamp).toLocaleDateString(undefined, {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',

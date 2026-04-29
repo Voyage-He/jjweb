@@ -13,7 +13,9 @@ import type {
   Repository,
   WorkingCopyStatus,
   FileStatus,
-} from '../src/types/entities';
+} from './entities';
+
+const epochMilliseconds = 1704067200000;
 
 describe('Entity Types', () => {
   describe('Author', () => {
@@ -21,12 +23,12 @@ describe('Entity Types', () => {
       const author: Author = {
         name: 'John Doe',
         email: 'john@example.com',
-        timestamp: 1704067200,
+        timestamp: epochMilliseconds,
       };
 
       expect(author.name).toBe('John Doe');
       expect(author.email).toBe('john@example.com');
-      expect(author.timestamp).toBe(1704067200);
+      expect(author.timestamp).toBe(epochMilliseconds);
     });
   });
 
@@ -35,7 +37,7 @@ describe('Entity Types', () => {
       const author: Author = {
         name: 'John Doe',
         email: 'john@example.com',
-        timestamp: 1704067200,
+        timestamp: epochMilliseconds,
       };
 
       const commit: Commit = {
@@ -45,7 +47,7 @@ describe('Entity Types', () => {
         author,
         committer: author,
         description: 'Initial commit',
-        timestamp: 1704067200,
+        timestamp: epochMilliseconds,
         bookmarks: [],
         tags: [],
       };
@@ -61,7 +63,7 @@ describe('Entity Types', () => {
       const author: Author = {
         name: 'John Doe',
         email: 'john@example.com',
-        timestamp: 1704067200,
+        timestamp: epochMilliseconds,
       };
 
       const workingCopyCommit: Commit = {
@@ -71,7 +73,7 @@ describe('Entity Types', () => {
         author,
         committer: author,
         description: 'Working copy',
-        timestamp: 1704067200,
+        timestamp: epochMilliseconds,
         bookmarks: [],
         tags: [],
         isWorkingCopy: true,
@@ -121,7 +123,7 @@ describe('Entity Types', () => {
         id: 'op123',
         operationId: 'operation-uuid',
         metadata,
-        timestamp: 1704067200,
+        timestamp: epochMilliseconds,
       };
 
       expect(operation.id).toBe('op123');

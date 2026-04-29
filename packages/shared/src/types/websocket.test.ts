@@ -17,7 +17,9 @@ import type {
   ErrorMessage,
   ConnectionState,
   WebSocketStatus,
-} from '../src/types/websocket';
+} from './websocket';
+
+const epochMilliseconds = 1704067200000;
 
 describe('WebSocket Types', () => {
   describe('Client Messages', () => {
@@ -54,7 +56,7 @@ describe('WebSocket Types', () => {
       const messages: ClientMessage[] = [
         { type: 'subscribe', repoPath: '/repo' },
         { type: 'unsubscribe', repoPath: '/repo' },
-        { type: 'ping', timestamp: 12345 },
+        { type: 'ping', timestamp: epochMilliseconds },
       ];
 
       expect(messages).toHaveLength(3);
@@ -222,11 +224,11 @@ describe('WebSocket Types', () => {
 
     it('should support all server message types', () => {
       const messages: ServerMessage[] = [
-        { type: 'pong', timestamp: 12345 },
+        { type: 'pong', timestamp: epochMilliseconds },
         { type: 'file:changed', path: 'file.ts', status: 'modified' },
         { type: 'commit:created', commit: { id: 'c1', changeId: 'ch1', parents: [], description: '' } },
         { type: 'commit:updated', commitId: 'c1', changes: {} },
-        { type: 'operation:recorded', operation: { id: 'o1', command: 'test', timestamp: 123 } },
+        { type: 'operation:recorded', operation: { id: 'o1', command: 'test', timestamp: epochMilliseconds } },
         { type: 'bookmark:changed', name: 'main', action: 'created' },
         { type: 'working_copy:changed', summary: { added: 0, modified: 0, deleted: 0, untracked: 0, conflicts: 0 } },
         { type: 'conflict:detected', path: 'file.ts', conflictType: 'content' },

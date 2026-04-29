@@ -2,7 +2,7 @@
  * WebSocket message types for real-time updates
  */
 
-import type { FileStatus } from './entities.js';
+import type { EpochMilliseconds, FileStatus } from './entities.js';
 
 // Client -> Server messages
 export type ClientMessage =
@@ -22,7 +22,7 @@ export interface UnsubscribeMessage {
 
 export interface PingMessage {
   type: 'ping';
-  timestamp: number;
+  timestamp: EpochMilliseconds;
 }
 
 // Server -> Client messages
@@ -42,7 +42,7 @@ export type ServerMessage =
 
 export interface PongMessage {
   type: 'pong';
-  timestamp: number;
+  timestamp: EpochMilliseconds;
 }
 
 export interface FileChangedMessage {
@@ -85,7 +85,7 @@ export interface OperationRecordedMessage {
   operation: {
     id: string;
     command: string;
-    timestamp: number;
+    timestamp: EpochMilliseconds;
   };
 }
 
@@ -130,6 +130,6 @@ export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'rec
 
 export interface WebSocketStatus {
   state: ConnectionState;
-  lastConnected?: number;
+  lastConnected?: EpochMilliseconds;
   reconnectAttempts: number;
 }

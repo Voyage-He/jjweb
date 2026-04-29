@@ -3,7 +3,6 @@
  * Displays detailed information about a selected commit
  */
 
-import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Commit, FileChange } from '@jujutsu-gui/shared';
 import { FileChangesList } from './FileChangesList';
@@ -224,7 +223,7 @@ export function CommitDetail({
  * Format timestamp to human-readable date
  */
 function formatDate(timestamp: number): string {
-  const date = new Date(timestamp * 1000);
+  const date = new Date(timestamp);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));

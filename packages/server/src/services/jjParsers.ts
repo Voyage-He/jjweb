@@ -169,7 +169,7 @@ function calculateLayout(commits: Commit[]): Commit[] {
     let current: Commit | undefined = head;
     while (current && !pinned.has(current.changeId)) {
       pinned.add(current.changeId);
-      const primaryParent = current.parents[0];
+      const primaryParent: string | undefined = current.parents[0];
       current = primaryParent ? commitByChange.get(getStableId(primaryParent)) : undefined;
     }
     return pinned;
@@ -553,6 +553,7 @@ function parseCommitFromJson(json: JJCommitJson): Commit {
 /**
  * Parse timestamp from jj output
  * jj timestamp format: "2024-01-15 10:30:00 -08:00" or ISO format
+ * Returns Unix epoch milliseconds, equivalent to Date#getTime().
  */
 function parseTimestamp(timestamp: string): number {
   // jj outputs timestamps in format like "2024-01-15 10:30:00 -08:00"

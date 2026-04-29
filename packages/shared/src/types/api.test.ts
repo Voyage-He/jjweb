@@ -25,7 +25,7 @@ import type {
   AliasesResponse,
   CreateAliasRequest,
   ErrorResponse,
-} from '../src/types/api';
+} from './api';
 
 describe('API Types', () => {
   describe('Repository API', () => {

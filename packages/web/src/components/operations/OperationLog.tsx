@@ -341,7 +341,7 @@ function getOperationColor(type: OperationType): string {
  */
 function formatTimestamp(timestamp: number): string {
   const now = Date.now();
-  const diff = now - timestamp * 1000;
+  const diff = now - timestamp;
 
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);

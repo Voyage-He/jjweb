@@ -2,6 +2,11 @@
  * Core entity types for Jujutsu GUI
  */
 
+/**
+ * Unix epoch timestamp in milliseconds, matching Date#getTime() and Date.now().
+ */
+export type EpochMilliseconds = number;
+
 export interface Commit {
   id: string;
   changeId: string;
@@ -9,7 +14,7 @@ export interface Commit {
   author: Author;
   committer: Author;
   description: string;
-  timestamp: number;
+  timestamp: EpochMilliseconds;
   bookmarks: Bookmark[];
   tags: string[];
   isWorkingCopy?: boolean;
@@ -23,7 +28,7 @@ export interface Commit {
 export interface Author {
   name: string;
   email: string;
-  timestamp: number;
+  timestamp: EpochMilliseconds;
 }
 
 export interface Bookmark {
@@ -47,12 +52,12 @@ export interface Operation {
   isSnapshot?: boolean;
   workspaceName?: string;
   metadata: OperationMetadata;
-  timestamp: number;
+  timestamp: EpochMilliseconds;
 }
 
 export interface OperationTime {
-  start: number;
-  end: number;
+  start: EpochMilliseconds;
+  end: EpochMilliseconds;
   duration: string;
 }
 

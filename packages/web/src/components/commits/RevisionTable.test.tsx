@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { Commit } from '@jujutsu-gui/shared';
 import { calculateCommitLinePath, RevisionTable } from './RevisionTable';
@@ -26,15 +26,15 @@ const makeCommit = (overrides: Partial<Commit> = {}): Commit => ({
   author: {
     name: 'Test Author',
     email: 'test@example.com',
-    timestamp: 1710000000,
+    timestamp: 1710000000000,
   },
   committer: {
     name: 'Test Author',
     email: 'test@example.com',
-    timestamp: 1710000000,
+    timestamp: 1710000000000,
   },
   description: 'Default message',
-  timestamp: 1710000000,
+  timestamp: 1710000000000,
   bookmarks: [],
   tags: [],
   row: 0,
@@ -63,6 +63,10 @@ const svgClass = (testId: string) => screen.getByTestId(testId).getAttribute('cl
 describe('RevisionTable', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('shows only the first line of a multiline message', () => {
@@ -100,6 +104,22 @@ describe('RevisionTable', () => {
     expect(messageCell.textContent?.indexOf('main')).toBeLessThan(
       messageCell.textContent?.indexOf('Add bookmark display') ?? -1
     );
+  });
+
+  it('formats revision dates from epoch milliseconds', () => {
+    vi.spyOn(Date.prototype, 'toLocaleDateString').mockImplementation(function (this: Date) {
+      return String(this.getUTCFullYear());
+    });
+
+    renderRevisionTable([makeCommit({
+      author: {
+        name: 'Test Author',
+        email: 'test@example.com',
+        timestamp: 1704067200000,
+      },
+    })]);
+
+    expect(screen.getByText('2024')).toBeInTheDocument();
   });
 
   it('allows clicking actions in the revision context menu', () => {
